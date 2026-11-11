@@ -1,9 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  CT_HUB_2,
   buildPlacesRequest,
+  searchRadius,
+  formatPlaces,
   formatForecast,
   formatBusArrivals,
+  normaliseStopCode,
   haversineMetres,
 } from "../src/tools.js";
 
@@ -22,14 +26,63 @@ test("formatForecast picks the requested area", () => {
     },
   };
 
-  assert.deepEqual(formatForecast(payload, "Kallang"), {
+  assert.deepEqual(formatForecast(payload, "Kallang", Date.now()), {
     area: "Kallang",
     forecast: "Light Rain",
     valid_period: "12 pm to 2 pm",
+    stale: false,
   });
 });
 
-test("formatBusArrivals converts durations to whole minutes", () => {
+test("formatForecast flags a forecast whose period has ended", () => {
+  const payload = {
+    data: {
+      items: [
+        {
+          valid_period: {
+            start: "2026-11-11T12:00:00+08:00",
+            end: "2026-11-11T14:00:00+08:00",
+            text: "12.00 pm to 2.00 pm",
+          },
+          forecasts: [{ area: "Kallang", forecast: "Showers" }],
+        },
+      ],
+    },
+  };
+  const at = (time) => Date.parse(`2026-11-11T${time}+08:00`);
+
+  assert.equal(formatForecast(payload, "Kallang", at("13:30:00")).stale, false);
+  assert.equal(formatForecast(payload, "Kallang", at("14:30:00")).stale, true);
+});
+
+test("formatBusArrivals counts minutes from arrival time, rounded down", () => {
+  const now = Date.parse("2026-11-11T12:00:00+08:00");
+  // duration_ms here is stale, as in a cached response; time is the truth.
+  const payload = {
+    services: [
+      {
+        no: "13",
+        next: { time: "2026-11-11T12:01:30+08:00", duration_ms: 120_000 },
+        subsequent: { time: "2026-11-11T12:10:00+08:00", duration_ms: 610_000 },
+      },
+      {
+        no: "61",
+        next: { time: "2026-11-11T11:59:50+08:00", duration_ms: 5_000 },
+        subsequent: null,
+      },
+    ],
+  };
+
+  assert.deepEqual(formatBusArrivals(payload, "07361", now), {
+    stop_code: "07361",
+    services: [
+      { service: "13", next_min: 1, subsequent_min: 10 },
+      { service: "61", next_min: 0, subsequent_min: null },
+    ],
+  });
+});
+
+test("formatBusArrivals falls back to duration_ms when there is no time", () => {
   const payload = {
     services: [
       {
@@ -41,13 +94,30 @@ test("formatBusArrivals converts durations to whole minutes", () => {
     ],
   };
 
-  assert.deepEqual(formatBusArrivals(payload, "07371"), {
+  assert.deepEqual(formatBusArrivals(payload, "07371", 0), {
     stop_code: "07371",
     services: [
-      { service: "13", next_min: 2, subsequent_min: 20 },
-      { service: "107M", next_min: 1, subsequent_min: null },
+      { service: "13", next_min: 1, subsequent_min: 20 },
+      { service: "107M", next_min: 0, subsequent_min: null },
     ],
   });
+});
+
+test("formatBusArrivals passes on arrivelah's error for a bad stop code", () => {
+  const payload = { error: "Invalid bus stop code.", statusCode: 400 };
+  assert.deepEqual(formatBusArrivals(payload, "99999", 0), {
+    stop_code: "99999",
+    error: "Invalid bus stop code.",
+  });
+});
+
+test("normaliseStopCode restores a dropped leading zero", () => {
+  assert.equal(normaliseStopCode(7361), "07361");
+  assert.equal(normaliseStopCode("07361"), "07361");
+  assert.equal(normaliseStopCode(" 80009 "), "80009");
+  assert.equal(normaliseStopCode("abc"), null);
+  assert.equal(normaliseStopCode("123456"), null);
+  assert.equal(normaliseStopCode(undefined), null);
 });
 
 test("haversineMetres measures CT Hub 2 to Lavender MRT at under 600 m", () => {
@@ -57,10 +127,53 @@ test("haversineMetres measures CT Hub 2 to Lavender MRT at under 600 m", () => {
   assert.ok(distance > 400 && distance < 550, `got ${distance}`);
 });
 
-test("buildPlacesRequest centres the search on CT Hub 2", () => {
+test("buildPlacesRequest keeps the search to 800 m around CT Hub 2", () => {
   const body = buildPlacesRequest({ query: "chicken rice" });
-  assert.deepEqual(body.locationBias.circle.center, {
-    latitude: 1.3115,
-    longitude: 103.8615,
-  });
+  const { low, high } = body.locationRestriction.rectangle;
+  const centre = {
+    latitude: (low.latitude + high.latitude) / 2,
+    longitude: (low.longitude + high.longitude) / 2,
+  };
+  const ctHub2 = { latitude: 1.3115, longitude: 103.8615 };
+  assert.ok(haversineMetres(centre, ctHub2) < 1, "box is centred on CT Hub 2");
+
+  const north = { latitude: high.latitude, longitude: centre.longitude };
+  const east = { latitude: centre.latitude, longitude: high.longitude };
+  assert.equal(Math.round(haversineMetres(centre, north)), 800);
+  assert.equal(Math.round(haversineMetres(centre, east)), 800);
+});
+
+test("searchRadius defaults to a walk and stays between 100 m and 5 km", () => {
+  assert.equal(searchRadius(undefined), 800);
+  assert.equal(searchRadius("far"), 800);
+  assert.equal(searchRadius(3000), 3000);
+  assert.equal(searchRadius("1500"), 1500);
+  assert.equal(searchRadius(20), 100);
+  assert.equal(searchRadius(99999), 5000);
+});
+
+test("formatPlaces gives open status, nearest first, within the radius", () => {
+  const places = [
+    {
+      displayName: { text: "By the MRT" },
+      rating: 4.1,
+      location: { latitude: 1.3073, longitude: 103.8631 },
+      currentOpeningHours: { openNow: false },
+    },
+    {
+      displayName: { text: "In Bedok" },
+      rating: 4.3,
+      location: { latitude: 1.3236, longitude: 103.9273 },
+      currentOpeningHours: { openNow: true },
+    },
+    {
+      displayName: { text: "Next door" },
+      location: { latitude: 1.3116, longitude: 103.8615 },
+    },
+  ];
+
+  assert.deepEqual(formatPlaces(places, CT_HUB_2, 800), [
+    { name: "Next door", rating: null, distance_m: 11, open_now: null },
+    { name: "By the MRT", rating: 4.1, distance_m: 500, open_now: false },
+  ]);
 });

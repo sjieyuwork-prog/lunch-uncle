@@ -9,9 +9,20 @@
 // CT Hub 2, 114 Lavender Street.
 export const CT_HUB_2 = { latitude: 1.3115, longitude: 103.8615 };
 
+const EARTH_RADIUS_METRES = 6371000;
+const METRES_PER_DEGREE = (EARTH_RADIUS_METRES * Math.PI) / 180;
+
 const SEARCH_RADIUS_METRES = 800;
+const MIN_SEARCH_RADIUS_METRES = 100;
+const MAX_SEARCH_RADIUS_METRES = 5000;
 const MAX_PLACES = 10;
 const FORECAST_AREA = "Kallang";
+
+const TOOL_TIMEOUT_MS = 5_000;
+// Cloudflare keeps these GET responses at the edge for this many seconds.
+// The forecast changes about every half hour; arrivelah allows 15 s.
+const FORECAST_CACHE_SECONDS = 300;
+const BUS_CACHE_SECONDS = 15;
 
 const PLACES_URL = "https://places.googleapis.com/v1/places:searchText";
 const FORECAST_URL =
@@ -28,7 +39,7 @@ export const toolDefinitions = [
     function: {
       name: "find_lunch_places",
       description:
-        "Search for places to eat near CT Hub 2. Returns name, rating, distance and whether it is open now.",
+        "Search for places to eat near CT Hub 2. Returns name, rating, straight-line distance in metres and open_now (true, false, or null if unknown), nearest first.",
       parameters: {
         type: "object",
         properties: {
@@ -41,6 +52,11 @@ export const toolDefinitions = [
             type: "boolean",
             description: "Only return places that are open right now.",
           },
+          max_distance_m: {
+            type: "integer",
+            description:
+              "How far from CT Hub 2 to search, in metres. Defaults to 800, a short walk. Up to 5000 if the user will take a bus or cab.",
+          },
         },
         required: ["query"],
       },
@@ -51,7 +67,7 @@ export const toolDefinitions = [
     function: {
       name: "get_rain_forecast",
       description:
-        "Get the two-hour weather forecast for the Kallang area, which covers CT Hub 2.",
+        "Get the two-hour weather forecast for the Kallang area, which covers CT Hub 2. stale is true if the forecast period has already ended, so it may be out of date.",
       parameters: { type: "object", properties: {} },
     },
   },
@@ -66,7 +82,7 @@ export const toolDefinitions = [
         properties: {
           stop_code: {
             type: "string",
-            description: 'Five-digit bus stop code, e.g. "07371".',
+            description: 'Five-digit bus stop code, e.g. "07361".',
           },
         },
         required: ["stop_code"],
@@ -81,17 +97,25 @@ export const toolDefinitions = [
 
 /**
  * Run one tool call requested by the model and return the result as a string.
+ * Never throws: a failure becomes an error result the model can work with.
  */
 export async function executeTool(name, args, env) {
-  switch (name) {
-    case "find_lunch_places":
-      return JSON.stringify(await findLunchPlaces(args, env));
-    case "get_rain_forecast":
-      return JSON.stringify(await getRainForecast());
-    case "get_bus_arrivals":
-      return JSON.stringify(await getBusArrivals(args));
-    default:
-      return JSON.stringify({ error: `Unknown tool: ${name}` });
+  try {
+    switch (name) {
+      case "find_lunch_places":
+        return JSON.stringify(await findLunchPlaces(args, env));
+      case "get_rain_forecast":
+        return JSON.stringify(await getRainForecast());
+      case "get_bus_arrivals":
+        return JSON.stringify(await getBusArrivals(args));
+      default:
+        return JSON.stringify({ error: `Unknown tool: ${name}` });
+    }
+  } catch (err) {
+    // A network error, timeout or non-JSON reply from one API should not
+    // end the whole turn, or stop the other tools in the same round.
+    console.error(`${name} failed:`, err);
+    return JSON.stringify({ error: `${name} failed: ${err.message}` });
   }
 }
 
@@ -100,6 +124,10 @@ export async function executeTool(name, args, env) {
 // ---------------------------------------------------------------------------
 
 async function findLunchPlaces(args, env) {
+  if (typeof args.query !== "string" || args.query.trim() === "") {
+    return { error: "query is required" };
+  }
+
   const res = await fetch(PLACES_URL, {
     method: "POST",
     headers: {
@@ -109,6 +137,7 @@ async function findLunchPlaces(args, env) {
         "places.id,places.displayName,places.location,places.rating,places.currentOpeningHours",
     },
     body: JSON.stringify(buildPlacesRequest(args)),
+    signal: AbortSignal.timeout(TOOL_TIMEOUT_MS),
   });
 
   if (!res.ok) {
@@ -116,40 +145,74 @@ async function findLunchPlaces(args, env) {
   }
 
   const data = await res.json();
-  return { places: formatPlaces(data.places ?? [], CT_HUB_2) };
+  const radius = searchRadius(args.max_distance_m);
+  return { places: formatPlaces(data.places ?? [], CT_HUB_2, radius) };
 }
 
 /**
  * Build the Text Search request body for a lunch query near CT Hub 2.
+ * Results are restricted to a box around CT Hub 2 that fits the search
+ * radius, so far-away famous places cannot crowd out nearby ones.
  */
-export function buildPlacesRequest({ query, open_now = false }) {
+export function buildPlacesRequest({ query, open_now = false, max_distance_m }) {
   return {
     textQuery: query,
     includedType: "restaurant",
     openNow: open_now,
     pageSize: MAX_PLACES,
-    locationBias: {
-      circle: { center: CT_HUB_2, radius: SEARCH_RADIUS_METRES },
+    locationRestriction: {
+      rectangle: boxAround(CT_HUB_2, searchRadius(max_distance_m)),
     },
   };
 }
 
 /**
- * Shape Places API results into the fields Uncle needs.
+ * The search radius in metres: what the model asked for, kept between
+ * 100 m and 5 km, or the walking-distance default if it did not ask.
  */
-export function formatPlaces(places, origin) {
-  return places.map(({ displayName, rating, location }) => ({
-    name: displayName?.text ?? "Unnamed",
-    rating: rating ?? null,
-    distance_m: Math.round(haversineMetres(origin, location)),
-  }));
+export function searchRadius(requested) {
+  const metres = Number(requested);
+  if (!(metres > 0)) {
+    return SEARCH_RADIUS_METRES;
+  }
+  return Math.min(
+    Math.max(Math.round(metres), MIN_SEARCH_RADIUS_METRES),
+    MAX_SEARCH_RADIUS_METRES,
+  );
+}
+
+// The smallest latitude/longitude box that holds a circle of this radius.
+function boxAround({ latitude, longitude }, metres) {
+  const dLat = metres / METRES_PER_DEGREE;
+  const dLon = dLat / Math.cos((latitude * Math.PI) / 180);
+  return {
+    low: { latitude: latitude - dLat, longitude: longitude - dLon },
+    high: { latitude: latitude + dLat, longitude: longitude + dLon },
+  };
+}
+
+/**
+ * Shape Places API results into the fields Uncle needs, nearest first.
+ * The search box's corners reach past the radius, so drop places beyond it.
+ */
+export function formatPlaces(places, origin, maxDistance = Infinity) {
+  return places
+    .filter(({ location }) => location)
+    .map(({ displayName, rating, location, currentOpeningHours }) => ({
+      name: displayName?.text ?? "Unnamed",
+      rating: rating ?? null,
+      distance_m: Math.round(haversineMetres(origin, location)),
+      open_now: currentOpeningHours?.openNow ?? null,
+    }))
+    .filter((place) => place.distance_m <= maxDistance)
+    .sort((a, b) => a.distance_m - b.distance_m);
 }
 
 /**
  * Great-circle distance between two {latitude, longitude} points, in metres.
  */
 export function haversineMetres(a, b) {
-  const R = 6371000;
+  const R = EARTH_RADIUS_METRES;
   const toRad = (deg) => (deg * Math.PI) / 180;
   const dLat = toRad(b.latitude - a.latitude);
   const dLon = toRad(b.longitude - a.longitude);
@@ -166,26 +229,31 @@ export function haversineMetres(a, b) {
 // ---------------------------------------------------------------------------
 
 async function getRainForecast() {
-  const res = await fetch(FORECAST_URL);
+  const res = await fetch(FORECAST_URL, {
+    signal: AbortSignal.timeout(TOOL_TIMEOUT_MS),
+    cf: { cacheTtl: FORECAST_CACHE_SECONDS },
+  });
   if (!res.ok) {
     return { error: `Forecast API returned ${res.status}` };
   }
-  return formatForecast(await res.json(), FORECAST_AREA);
+  return formatForecast(await res.json(), FORECAST_AREA, Date.now());
 }
 
 /**
  * Pull one area's forecast out of the data.gov.sg two-hour forecast payload.
+ * stale is true if the forecast period ended before now (in milliseconds).
  */
-export function formatForecast(payload, area) {
+export function formatForecast(payload, area, now) {
   const item = payload?.data?.items?.[0];
   if (!item) {
     return { error: "No forecast available" };
   }
-  const entry = item.forecasts.find((f) => f.area === area);
+  const entry = item.forecasts?.find((f) => f.area === area);
   return {
     area,
     forecast: entry?.forecast ?? "Unknown",
     valid_period: item.valid_period?.text ?? null,
+    stale: Date.parse(item.valid_period?.end) < now,
   };
 }
 
@@ -193,33 +261,63 @@ export function formatForecast(payload, area) {
 // get_bus_arrivals
 // ---------------------------------------------------------------------------
 
-async function getBusArrivals({ stop_code }) {
-  const url = `${BUS_URL}?id=${encodeURIComponent(stop_code)}`;
-  const res = await fetch(url);
+async function getBusArrivals(args) {
+  const stopCode = normaliseStopCode(args.stop_code);
+  if (!stopCode) {
+    return { error: "stop_code must be a five-digit bus stop code" };
+  }
+  const res = await fetch(`${BUS_URL}?id=${stopCode}`, {
+    signal: AbortSignal.timeout(TOOL_TIMEOUT_MS),
+    cf: { cacheTtl: BUS_CACHE_SECONDS },
+  });
   if (!res.ok) {
     return { error: `Bus API returned ${res.status}` };
   }
-  return formatBusArrivals(await res.json(), stop_code);
+  return formatBusArrivals(await res.json(), stopCode, Date.now());
 }
 
 /**
- * Reduce an arrivelah response to service numbers and minutes to arrival.
+ * Turn the model's stop code into five digits, putting back a dropped
+ * leading zero (7361 becomes "07361"). Returns null if it is not digits.
  */
-export function formatBusArrivals(payload, stopCode) {
+export function normaliseStopCode(code) {
+  const digits = String(code ?? "").trim();
+  return /^\d{1,5}$/.test(digits) ? digits.padStart(5, "0") : null;
+}
+
+/**
+ * Reduce an arrivelah response to service numbers and whole minutes until
+ * each bus arrives, counted from now (a timestamp in milliseconds).
+ */
+export function formatBusArrivals(payload, stopCode, now) {
+  // arrivelah answers a bad stop code with HTTP 200 and an error field.
+  if (payload?.error) {
+    return { stop_code: stopCode, error: payload.error };
+  }
   const services = payload?.services ?? [];
   return {
     stop_code: stopCode,
     services: services.map((s) => ({
       service: s.no,
-      next_min: minutesFromNow(s.next),
-      subsequent_min: minutesFromNow(s.subsequent),
+      next_min: minutesUntil(s.next, now),
+      subsequent_min: minutesUntil(s.subsequent, now),
     })),
   };
 }
 
-function minutesFromNow(arrival) {
-  if (!arrival || typeof arrival.duration_ms !== "number") {
+// Prefer the arrival time: duration_ms is fixed when arrivelah builds the
+// response, so it goes stale while the response sits in a cache. Round
+// down, so a bus 90 seconds away shows as 1 minute, not 2.
+function minutesUntil(arrival, now) {
+  if (!arrival) {
     return null;
   }
-  return Math.max(0, Math.round(arrival.duration_ms / 60000));
+  const ms =
+    typeof arrival.time === "string"
+      ? Date.parse(arrival.time) - now
+      : arrival.duration_ms;
+  if (typeof ms !== "number" || Number.isNaN(ms)) {
+    return null;
+  }
+  return Math.max(0, Math.floor(ms / 60000));
 }
