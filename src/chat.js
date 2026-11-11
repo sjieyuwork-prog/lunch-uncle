@@ -6,6 +6,8 @@ export const MAX_MESSAGE_CHARS = 1000;
 export const MAX_HISTORY_MESSAGES = 20;
 
 const HISTORY_ROLES = new Set(["user", "assistant"]);
+// The page's conversation id, sent on as the x-opencode-session header.
+const SESSION_ID = /^[A-Za-z0-9-]{8,64}$/;
 
 /**
  * Handle POST /chat: check the request, run one turn, and reply with JSON.
@@ -40,7 +42,12 @@ export async function handleChat(request, env) {
   }
 
   try {
-    const reply = await runLoop(turn.history, turn.message, env);
+    const reply = await runLoop(
+      turn.history,
+      turn.message,
+      env,
+      turn.sessionId,
+    );
     return json({ reply });
   } catch (err) {
     console.error("chat failed:", err);
@@ -49,11 +56,13 @@ export async function handleChat(request, env) {
 }
 
 /**
- * Check a parsed /chat body. Returns {history, message} or {error}.
+ * Check a parsed /chat body. Returns {history, message, sessionId}, or
+ * {error} if the body is not valid.
  *
  * History may only hold user and assistant messages, so a client cannot
  * slip in its own system prompt or tool results. Only the most recent
- * messages are kept, with any extra fields dropped.
+ * messages are kept, with any extra fields dropped. A session id that does
+ * not look like one is ignored, and the turn gets a fresh one.
  */
 function parseTurn(body) {
   if (body === null || typeof body !== "object" || Array.isArray(body)) {
@@ -72,11 +81,16 @@ function parseTurn(body) {
     return { error: "history must be a list of user and assistant messages" };
   }
 
+  const { session } = body;
   return {
     message,
     history: history
       .slice(-MAX_HISTORY_MESSAGES)
       .map(({ role, content }) => ({ role, content })),
+    sessionId:
+      typeof session === "string" && SESSION_ID.test(session)
+        ? session
+        : undefined,
   };
 }
 

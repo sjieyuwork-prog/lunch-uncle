@@ -14,12 +14,15 @@ const ENV = {
 
 /**
  * Stand in for the model. It answers every call with "Can lah." and
- * records the messages it was sent, one array per call.
+ * records what each call sent: the messages and the session header.
  */
 function stubModel(t) {
   const sent = [];
   t.mock.method(globalThis, "fetch", async (url, init) => {
-    sent.push(JSON.parse(init.body).messages);
+    sent.push({
+      messages: JSON.parse(init.body).messages,
+      session: init.headers["x-opencode-session"],
+    });
     return Response.json({
       choices: [{ message: { role: "assistant", content: "Can lah." } }],
     });
@@ -124,12 +127,26 @@ test("the model gets only recent history, as role and content", async (t) => {
   const res = await handleChat(postChat({ history, message: "and now?" }), ENV);
   assert.equal(res.status, 200);
 
-  const [system, ...rest] = sent[0];
+  const [system, ...rest] = sent[0].messages;
+  const latest = rest.pop();
   assert.equal(system.role, "system");
-  assert.deepEqual(rest, [
-    ...history
+  assert.deepEqual(
+    rest,
+    history
       .slice(-MAX_HISTORY_MESSAGES)
       .map(({ role, content }) => ({ role, content })),
-    { role: "user", content: "and now?" },
-  ]);
+  );
+  assert.equal(latest.role, "user");
+  assert.match(latest.content, /^\[.+ SGT\] and now\?$/);
+});
+
+test("the page's session id reaches the model provider", async (t) => {
+  const sent = stubModel(t);
+  const session = "3f1c2a9e-0d4b-4c2b-9d1e-1234567890ab";
+  await handleChat(postChat({ session, message: "hi" }), ENV);
+  await handleChat(postChat({ session: "bad id!", message: "hi" }), ENV);
+
+  assert.equal(sent[0].session, session);
+  // An id that does not look like one is replaced, not sent on.
+  assert.match(sent[1].session, /^[0-9a-f-]{36}$/);
 });

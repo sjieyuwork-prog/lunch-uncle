@@ -82,7 +82,7 @@ export const toolDefinitions = [
         properties: {
           stop_code: {
             type: "string",
-            description: 'Five-digit bus stop code, e.g. "07371".',
+            description: 'Five-digit bus stop code, e.g. "07361".',
           },
         },
         required: ["stop_code"],

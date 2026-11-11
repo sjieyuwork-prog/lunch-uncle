@@ -50,6 +50,10 @@
     // The server only reads the most recent messages, so only send those.
     const history = [];
     const MAX_HISTORY_MESSAGES = 20;
+    // One id for the whole conversation, so the model provider can reuse
+    // its cache between turns. randomUUID needs HTTPS or localhost.
+    const session =
+      crypto.randomUUID?.() ?? Math.random().toString(36).slice(2);
 
     function addBubble(role, text) {
       const div = document.createElement("div");
@@ -75,6 +79,7 @@
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
+            session,
             history: history.slice(-MAX_HISTORY_MESSAGES),
             message,
           }),

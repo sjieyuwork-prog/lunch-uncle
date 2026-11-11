@@ -1,4 +1,4 @@
-import { buildSystemPrompt } from "./prompt.js";
+import { buildSystemPrompt, userMessage } from "./prompt.js";
 import { toolDefinitions, executeTool } from "./tools.js";
 
 // TODO: set the base URL and model for your OpenAI-compatible provider.
@@ -25,8 +25,16 @@ const FOOD_WORDS = /\b(eat|lunch|food|makan|hungry|restaurant|hawker)\b/i;
  * Run the agentic loop for one user turn and return Uncle's reply.
  *
  * history is the prior conversation as OpenAI-style {role, content} messages.
+ * sessionId identifies the conversation to the OpenCode Go endpoint, which
+ * uses it to route every model call the same way and so reuse its cache.
+ * Without one from the page, each turn gets its own.
  */
-export async function runLoop(history, message, env) {
+export async function runLoop(
+  history,
+  message,
+  env,
+  sessionId = crypto.randomUUID(),
+) {
   // If the Places key is missing, Uncle cannot search, so give food questions
   // a safe answer. Rain and bus questions do not need the key.
   if (!env.GOOGLE_PLACES_API_KEY && FOOD_WORDS.test(message)) {
@@ -36,12 +44,9 @@ export async function runLoop(history, message, env) {
   const messages = [
     { role: "system", content: buildSystemPrompt() },
     ...history,
-    { role: "user", content: message },
+    userMessage(message, new Date()),
   ];
 
-  // One session id per turn, shared by every model call in this loop run,
-  // so the OpenCode Go endpoint can route and cache consistently.
-  const sessionId = crypto.randomUUID();
   const deadline = Date.now() + TURN_BUDGET_MS;
   // Each distinct tool call runs once per turn; repeats reuse its result.
   const toolResults = new Map();
