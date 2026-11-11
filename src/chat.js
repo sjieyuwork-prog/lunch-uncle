@@ -13,6 +13,10 @@ const SESSION_ID = /^[A-Za-z0-9-]{8,64}$/;
  * Handle POST /chat: check the request, run one turn, and reply with JSON.
  */
 export async function handleChat(request, env) {
+  if (!(await withinRateLimit(request, env))) {
+    return json({ error: "Uncle is busy. Wait a minute and try again." }, 429);
+  }
+
   // Insisting on JSON also stops other sites posting here from a browser:
   // that needs a CORS preflight, which this Worker never approves.
   const type = request.headers.get("content-type") ?? "";
@@ -53,6 +57,23 @@ export async function handleChat(request, env) {
     console.error("chat failed:", err);
     return json({ error: "Uncle cannot think right now, try again later." }, 500);
   }
+}
+
+/**
+ * Count this request against its client's limit, set in wrangler.toml.
+ * Without the CHAT_LIMITER binding, as in tests, nothing is limited.
+ */
+async function withinRateLimit(request, env) {
+  if (!env.CHAT_LIMITER) {
+    return true;
+  }
+  // The hostname keeps apart Workers that share a limiter namespace.
+  const { hostname } = new URL(request.url);
+  const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
+  const { success } = await env.CHAT_LIMITER.limit({
+    key: `${hostname} ${ip}`,
+  });
+  return success;
 }
 
 /**

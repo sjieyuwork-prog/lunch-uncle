@@ -140,6 +140,33 @@ test("the model gets only recent history, as role and content", async (t) => {
   assert.match(latest.content, /^\[.+ SGT\] and now\?$/);
 });
 
+test("a client over its rate limit gets a 429", async (t) => {
+  const sent = stubModel(t);
+  const keys = [];
+  const env = {
+    ...ENV,
+    // A fake limiter that lets each client through once.
+    CHAT_LIMITER: {
+      limit: async ({ key }) => {
+        keys.push(key);
+        return { success: keys.filter((k) => k === key).length === 1 };
+      },
+    },
+  };
+  const fromClient = () =>
+    postChat(
+      { message: "hi" },
+      { "content-type": "application/json", "cf-connecting-ip": "203.0.113.7" },
+    );
+
+  assert.equal((await handleChat(fromClient(), env)).status, 200);
+  const limited = await handleChat(fromClient(), env);
+  assert.equal(limited.status, 429);
+  assert.match((await limited.json()).error, /Wait a minute/);
+  assert.equal(sent.length, 1);
+  assert.deepEqual(keys, ["localhost 203.0.113.7", "localhost 203.0.113.7"]);
+});
+
 test("the page's session id reaches the model provider", async (t) => {
   const sent = stubModel(t);
   const session = "3f1c2a9e-0d4b-4c2b-9d1e-1234567890ab";
