@@ -36,7 +36,7 @@
   <div id="chat"></div>
 
   <form id="form">
-    <input id="input" placeholder="Uncle, where to eat?" autocomplete="off" autofocus>
+    <input id="input" placeholder="Uncle, where to eat?" autocomplete="off" maxlength="1000" autofocus>
     <button id="send" type="submit">Send</button>
   </form>
 
@@ -47,7 +47,9 @@
     const send = document.getElementById("send");
 
     // Conversation so far, in the shape the /chat endpoint expects.
+    // The server only reads the most recent messages, so only send those.
     const history = [];
+    const MAX_HISTORY_MESSAGES = 20;
 
     function addBubble(role, text) {
       const div = document.createElement("div");
@@ -72,7 +74,10 @@
         const res = await fetch("/chat", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ history, message }),
+          body: JSON.stringify({
+            history: history.slice(-MAX_HISTORY_MESSAGES),
+            message,
+          }),
         });
         const data = await res.json();
         const reply = data.reply ?? data.error ?? "No reply.";
