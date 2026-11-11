@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildPlacesRequest,
   formatForecast,
   formatBusArrivals,
   haversineMetres,
@@ -54,4 +55,12 @@ test("haversineMetres measures CT Hub 2 to Lavender MRT at under 600 m", () => {
   const lavenderMrt = { latitude: 1.3073, longitude: 103.8631 };
   const distance = haversineMetres(ctHub2, lavenderMrt);
   assert.ok(distance > 400 && distance < 550, `got ${distance}`);
+});
+
+test("buildPlacesRequest centres the search on CT Hub 2", () => {
+  const body = buildPlacesRequest({ query: "chicken rice" });
+  assert.deepEqual(body.locationBias.circle.center, {
+    latitude: 1.3115,
+    longitude: 103.8615,
+  });
 });

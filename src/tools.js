@@ -99,19 +99,7 @@ export async function executeTool(name, args, env) {
 // find_lunch_places
 // ---------------------------------------------------------------------------
 
-async function findLunchPlaces({ query, open_now = false }, env) {
-  const centre = { latitude: 1.3236, longitude: 103.9273 };
-
-  const body = {
-    textQuery: query,
-    includedType: "restaurant",
-    openNow: open_now,
-    pageSize: MAX_PLACES,
-    locationBias: {
-      circle: { center: centre, radius: SEARCH_RADIUS_METRES },
-    },
-  };
-
+async function findLunchPlaces(args, env) {
   const res = await fetch(PLACES_URL, {
     method: "POST",
     headers: {
@@ -120,7 +108,7 @@ async function findLunchPlaces({ query, open_now = false }, env) {
       "X-Goog-FieldMask":
         "places.id,places.displayName,places.location,places.rating,places.currentOpeningHours",
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify(buildPlacesRequest(args)),
   });
 
   if (!res.ok) {
@@ -128,7 +116,22 @@ async function findLunchPlaces({ query, open_now = false }, env) {
   }
 
   const data = await res.json();
-  return { places: formatPlaces(data.places ?? [], centre) };
+  return { places: formatPlaces(data.places ?? [], CT_HUB_2) };
+}
+
+/**
+ * Build the Text Search request body for a lunch query near CT Hub 2.
+ */
+export function buildPlacesRequest({ query, open_now = false }) {
+  return {
+    textQuery: query,
+    includedType: "restaurant",
+    openNow: open_now,
+    pageSize: MAX_PLACES,
+    locationBias: {
+      circle: { center: CT_HUB_2, radius: SEARCH_RADIUS_METRES },
+    },
+  };
 }
 
 /**
