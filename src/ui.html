@@ -112,7 +112,44 @@
 
     /* Chat */
     .uncle-face { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font: 800 .8rem/1 var(--mono); color: #04111a; background: conic-gradient(from 120deg, var(--accent), var(--accent-2), var(--accent)); }
-    #chat { flex: 1; min-height: 0; overflow-y: auto; padding: 1rem; display: flex; flex-direction: column; gap: .6rem; }
+    /* Uncle: his picture fills the top; only his latest reply shows below. */
+    .stage { position: relative; flex: 1 1 auto; min-height: 220px; overflow: hidden; border-bottom: 1px solid var(--line);
+      background:
+        radial-gradient(42% 60% at 52% 45%, rgba(34, 211, 238, .22), transparent 70%),
+        radial-gradient(60% 40% at 52% 100%, rgba(167, 139, 250, .25), transparent 70%),
+        linear-gradient(rgba(148, 163, 184, .07) 1px, transparent 1px) 0 0 / 28px 28px,
+        linear-gradient(90deg, rgba(148, 163, 184, .07) 1px, transparent 1px) 0 0 / 28px 28px; }
+    /* A slow scan line passes over Uncle, like a hologram. */
+    .stage::after { content: ""; position: absolute; left: 0; right: 0; top: -30%; height: 30%; pointer-events: none; background: linear-gradient(180deg, transparent, rgba(34, 211, 238, .08), transparent); animation: scan 5s linear infinite; }
+    .uncle-art { position: absolute; left: 72%; bottom: 0; height: 88%; aspect-ratio: 1024 / 559; transform: translateX(-50%); transform-origin: 52% 60%; animation: breathe 5s ease-in-out infinite; }
+    .uncle-art img { display: block; width: 100%; height: 100%; max-width: none; filter: drop-shadow(0 0 18px rgba(34, 211, 238, .35)); -webkit-mask-image: linear-gradient(180deg, #000 82%, transparent 100%); mask-image: linear-gradient(180deg, #000 82%, transparent 100%); }
+    .uncle-art.thinking { animation: ponder 2.4s ease-in-out infinite; }
+    .uncle-art.talking { animation: nod .9s ease-in-out infinite; }
+    /* A mouth over the drawn one, which opens and closes while he talks. */
+    .mouth { position: absolute; left: 52%; top: 52%; width: 6.6%; height: 4.6%; border-radius: 45% 45% 50% 50%; background: radial-gradient(ellipse at 50% 30%, #7a2a24 0%, #3a100d 60%, #240806 100%); box-shadow: 0 0 0 2px rgba(60, 20, 10, .35); opacity: 0; transform: translate(-50%, -50%) scaleY(.2); pointer-events: none; }
+    .talking .mouth { animation: chatter .62s linear infinite; }
+    .stage .online { position: absolute; top: 12px; right: 12px; padding: .25rem .6rem; background: rgba(6, 9, 19, .7); border-radius: 999px; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+    /* His words sit in a bubble beside his face, with a tail that reaches
+       his mouth. The bubble ends at his cheek and grows upwards, so it never
+       covers him. Positions follow his picture: 88% of the stage's height
+       (cqh), centred 72% across it (cqw), mouth 42% up from the bottom. */
+    .stage { container-type: size; }
+    .say { position: absolute; z-index: 2; right: calc(28cqw + 11cqh + 6px); bottom: calc(42cqh - 21px); width: fit-content; max-width: min(calc(72cqw - 11cqh - 18px), 320px); max-height: calc(58cqh + 9px); display: flex; flex-direction: column; pointer-events: none; }
+    .say::before { content: ""; position: absolute; left: calc(100% - 1px); bottom: 12px; width: 8cqh; height: 18px; background: rgba(10, 19, 34, .95); clip-path: polygon(0 0, 100% 50%, 0 100%); filter: drop-shadow(0 0 1px var(--accent)); }    .say .bubble { max-width: 100%; min-height: 0; overflow-y: auto; pointer-events: auto; font-size: .9rem; background: rgba(10, 19, 34, .9); border-radius: 14px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); scrollbar-width: thin; scrollbar-color: rgba(34, 211, 238, .35) transparent; }
+    .say .bubble.error { background: rgba(60, 16, 20, .92); }
+    /* Uncle's reply as rendered Markdown. */
+    .say .bubble { position: relative; white-space: normal; line-height: 1.5; padding: .8rem 1rem; border-color: rgba(34, 211, 238, .4); box-shadow: 0 10px 30px rgba(2, 6, 23, .55), 0 0 22px rgba(34, 211, 238, .1); }
+    .say .bubble.typing { padding: .85rem 1rem; }
+    .say .bubble p { margin: 0 0 .6em; }
+    .say .bubble ul, .say .bubble ol { margin: 0 0 .6em; padding-left: 1.2em; }
+    .say .bubble li { margin: .15em 0; }
+    .say .bubble li::marker { color: var(--accent); }
+    .say .bubble > :last-child { margin-bottom: 0; }
+    .say .bubble strong { font-weight: 650; color: #8be9f5; }
+    .say .bubble em { color: #c4b5fd; }
+    .say .bubble .heading { font-weight: 650; color: #8be9f5; }
+    .say .bubble code { padding: .05em .35em; font: .85em var(--mono); background: rgba(148, 163, 184, .16); border-radius: 5px; }
+    .say .bubble a { color: var(--accent); text-underline-offset: 2px; }
     .bubble { max-width: 85%; padding: .65rem .9rem; border-radius: 16px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; animation: rise .35s var(--ease) both; transition: opacity .18s ease, filter .18s ease; }
     .uncle { align-self: flex-start; background: var(--uncle); border: 1px solid var(--uncle-line); border-bottom-left-radius: 4px; box-shadow: 0 0 24px rgba(34, 211, 238, .06); }
     .you { align-self: flex-end; color: #fff; background: linear-gradient(135deg, #6366f1, #a855f7); border-bottom-right-radius: 4px; box-shadow: 0 10px 26px rgba(99, 102, 241, .35); }
@@ -124,20 +161,27 @@
     .typing span { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: blink 1.2s infinite ease-in-out; }
     .typing span:nth-child(2) { animation-delay: .15s; }
     .typing span:nth-child(3) { animation-delay: .3s; }
-    .suggestions { display: flex; flex-wrap: wrap; gap: .4rem; padding: 0 1rem .6rem; }
-    .suggestion { padding: .35rem .75rem; font-size: .8rem; color: var(--text); background: rgba(148, 163, 184, .08); border: 1px solid var(--line); border-radius: 999px; cursor: pointer; transition: border-color .2s, background .2s, transform .2s var(--ease); }
-    .suggestion:hover:not(:disabled) { transform: translateY(-1px); border-color: var(--uncle-line); background: rgba(34, 211, 238, .1); }
     form { display: flex; gap: .5rem; padding: .8rem 1rem 1rem; border-top: 1px solid var(--line); }
-    input { flex: 1; min-width: 0; padding: .75rem 1rem; font-size: 1rem; color: var(--text); background: rgba(2, 6, 23, .6); border: 1px solid var(--line); border-radius: 999px; outline: none; transition: border-color .2s, box-shadow .2s; }
+    input { flex: 1; min-width: 0; padding: .55rem .9rem; font-size: .95rem; color: var(--text); background: rgba(2, 6, 23, .6); border: 1px solid var(--line); border-radius: 999px; outline: none; transition: border-color .2s, box-shadow .2s; }
     input::placeholder { color: var(--muted); }
     input:focus { border-color: rgba(34, 211, 238, .6); box-shadow: 0 0 0 4px rgba(34, 211, 238, .14); }
-    #send { flex: none; width: 46px; height: 46px; display: grid; place-items: center; color: #04111a; background: linear-gradient(135deg, var(--accent), var(--accent-2)); border: 0; border-radius: 50%; cursor: pointer; transition: transform .15s var(--ease), filter .2s, opacity .2s; }
+    #send { flex: none; width: 38px; height: 38px; display: grid; place-items: center; color: #04111a; background: linear-gradient(135deg, var(--accent), var(--accent-2)); border: 0; border-radius: 50%; cursor: pointer; transition: transform .15s var(--ease), filter .2s, opacity .2s; }
     #send:hover { filter: brightness(1.12); }
     #send:active { transform: scale(.92); }
     button:disabled { opacity: .45; cursor: default; }
 
     @keyframes rise { from { opacity: 0; transform: translateY(10px) scale(.98); filter: blur(3px); } to { opacity: 1; transform: none; filter: none; } }
     @keyframes settle { from { opacity: 0; transform: translateY(3px); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
+    @keyframes breathe { 0%, 100% { transform: translateX(-50%) scale(1); } 50% { transform: translateX(-50%) scale(1.012); } }
+    @keyframes ponder { 0%, 100% { transform: translateX(-50%) rotate(0); } 50% { transform: translateX(-50%) rotate(-1.2deg) translateY(-.6%); } }
+    @keyframes nod { 0%, 100% { transform: translateX(-50%) translateY(0) rotate(0); } 30% { transform: translateX(-50%) translateY(-.8%) rotate(.5deg); } 70% { transform: translateX(-50%) translateY(.4%) rotate(-.4deg); } }
+    @keyframes chatter {
+      0%, 100% { opacity: 0; transform: translate(-50%, -50%) scaleY(.2); }
+      20% { opacity: .9; transform: translate(-50%, -50%) scaleY(1); }
+      40% { opacity: .55; transform: translate(-50%, -50%) scaleY(.5); }
+      60% { opacity: .85; transform: translate(-50%, -50%) scaleY(.85); }
+      80% { opacity: .3; transform: translate(-50%, -50%) scaleY(.35); }
+    }
     @keyframes blink { 0%, 80%, 100% { opacity: .25; transform: none; } 40% { opacity: 1; transform: translateY(-3px); } }
     @keyframes ping { from { box-shadow: 0 0 0 0 rgba(52, 211, 153, .6); } to { box-shadow: 0 0 0 8px rgba(52, 211, 153, 0); } }
     @keyframes radar { from { transform: scale(.4); opacity: .9; } to { transform: scale(1.7); opacity: 0; } }
@@ -185,14 +229,17 @@
       </div>
     </section>
 
-    <section class="panel chat-panel" aria-label="Chat with Uncle">
-      <div class="panel-head">
-        <div class="uncle-face" aria-hidden="true">U</div>
-        <h2>Uncle</h2>
+    <section class="panel chat-panel" aria-label="Talk to Uncle">
+      <div class="stage">
+        <div id="uncle" class="uncle-art">
+          <img src="/uncle.webp" alt="Uncle in his singlet with a towel round his neck, smiling" width="1024" height="559">
+          <span class="mouth" aria-hidden="true"></span>
+        </div>
+        <div class="say">
+          <div id="reply" class="bubble uncle" aria-live="polite"></div>
+        </div>
         <span class="online">Online</span>
       </div>
-      <div id="chat" aria-live="polite"></div>
-      <div id="suggestions" class="suggestions"></div>
       <form id="form">
         <input id="input" placeholder="Uncle, where to eat?" autocomplete="off" maxlength="1000" autofocus>
         <button id="send" type="submit" aria-label="Send">
@@ -226,12 +273,14 @@
 
     // ---- Chat ---------------------------------------------------------------
 
-    const chat = $("chat");
+    const uncle = $("uncle");
+    const replyEl = $("reply");
     const form = $("form");
     const input = $("input");
     const send = $("send");
 
-    // Conversation so far, in the shape the /chat endpoint expects.
+    // Conversation so far, in the shape the /chat endpoint expects. Only the
+    // latest reply is shown, but Uncle still needs the earlier turns.
     // The server only reads the most recent messages, so only send those.
     const history = [];
     const MAX_HISTORY_MESSAGES = 20;
@@ -241,74 +290,139 @@
       crypto.randomUUID?.() ?? Math.random().toString(36).slice(2);
     // The server gives up on a turn well before this.
     const REPLY_TIMEOUT_MS = 90_000;
-    const SUGGESTIONS = [
-      "Chicken rice nearby?",
-      "Will it rain later?",
-      "When is the next 13 bus?",
-      "Something cheap and fast",
-    ];
+    // About how fast Uncle speaks, and the longest he talks for one reply.
+    const MS_PER_WORD = 120;
+    const MAX_TALK_MS = 9000;
     let waiting = false;
+    let talkTimer = 0;
 
-    function scrollChat() {
-      chat.scrollTo({
-        top: chat.scrollHeight,
-        behavior: reduceMotion ? "auto" : "smooth",
-      });
+    // Uncle thinks: dots in his bubble.
+    function think() {
+      replyEl.className = "bubble uncle typing";
+      replyEl.setAttribute("aria-label", "Uncle is thinking");
+      replyEl.replaceChildren(el("span"), el("span"), el("span"));
+      uncle.classList.remove("talking");
+      uncle.classList.add("thinking");
     }
 
-    function addBubble(role, text) {
-      const bubble = el("div", `bubble ${role === "user" ? "you" : "uncle"}`, text);
-      chat.append(bubble);
-      scrollChat();
-      return bubble;
-    }
-
-    function addTyping() {
-      const bubble = el("div", "bubble uncle typing");
-      bubble.setAttribute("aria-label", "Uncle is typing");
-      bubble.append(el("span"), el("span"), el("span"));
-      chat.append(bubble);
-      scrollChat();
-      return bubble;
-    }
-
-    // Swap the typing dots for Uncle's answer: fade the dots out, then fade
-    // the words in one after another, as if Uncle were saying them.
-    async function settle(bubble, text, isError) {
-      bubble.classList.add("fade-out");
+    // Uncle says something: his words appear one after another while his
+    // mouth moves. Errors are shown plainly, without him saying them.
+    async function say(text, isError = false) {
+      uncle.classList.remove("thinking");
+      replyEl.classList.add("fade-out");
       await wait(180);
-      bubble.className = `bubble uncle fade-in${isError ? " error" : ""}`;
-      bubble.removeAttribute("aria-label");
-      bubble.replaceChildren();
+      replyEl.className = `bubble uncle fade-in${isError ? " error" : ""}`;
+      replyEl.removeAttribute("aria-label");
+      replyEl.replaceChildren();
+      replyEl.scrollTop = 0;
       if (isError) {
-        bubble.textContent = text;
-      } else {
-        const parts = text.split(/(\s+)/);
-        const step = Math.min(35, 900 / parts.length);
-        parts.forEach((part, i) => {
+        replyEl.textContent = text;
+        return;
+      }
+      const wordCount = text.split(/\s+/).filter(Boolean).length;
+      const step = Math.min(MS_PER_WORD, MAX_TALK_MS / Math.max(1, wordCount));
+      const n = renderMarkdown(replyEl, text, step);
+      if (reduceMotion) return;
+      uncle.classList.add("talking");
+      clearTimeout(talkTimer);
+      talkTimer = setTimeout(
+        () => uncle.classList.remove("talking"),
+        n * step + 350,
+      );
+    }
+
+    // Bold, italics, code and links inside a line of Uncle's reply.
+    const INLINE =
+      /(\*\*[^*\n]+\*\*|\*[^*\s][^*\n]*\*|`[^`\n]+`|\[[^\]\n]+\]\(https?:\/\/[^\s)]+\))/g;
+    const LIST_ITEM = /^\s*(?:[-*•]|(\d+)[.)])\s+(.*)$/;
+
+    /**
+     * Draw Uncle's reply, written in simple Markdown, into parent: paragraphs,
+     * headings, bullet and numbered lists, bold, italics, code and links.
+     * Everything is built as elements and text, never as HTML, so nothing in
+     * a reply can run as code. Each word fades in step ms after the one
+     * before it. Returns the number of words.
+     */
+    function renderMarkdown(parent, text, step) {
+      let n = 0;
+      const addWords = (target, chunk) => {
+        for (const part of chunk.split(/(\s+)/)) {
+          if (part === "") continue;
           if (part.trim() === "") {
-            bubble.append(part);
-            return;
+            target.append(" ");
+            continue;
           }
           const word = el("span", "word", part);
-          word.style.animationDelay = `${Math.round(i * step)}ms`;
-          bubble.append(word);
-        });
+          word.style.animationDelay = `${Math.round(n * step)}ms`;
+          target.append(word);
+          n += 1;
+        }
+      };
+      const addInline = (target, line) => {
+        for (const piece of line.split(INLINE)) {
+          if (!piece) continue;
+          const linked = piece.match(/^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/);
+          if (piece.startsWith("**") && piece.endsWith("**") && piece.length > 4) {
+            addWords(target.appendChild(el("strong")), piece.slice(2, -2));
+          } else if (piece.startsWith("`") && piece.endsWith("`") && piece.length > 2) {
+            addWords(target.appendChild(el("code")), piece.slice(1, -1));
+          } else if (linked) {
+            addWords(target.appendChild(link(linked[2], "")), linked[1]);
+          } else if (/^\*[^*]+\*$/.test(piece)) {
+            addWords(target.appendChild(el("em")), piece.slice(1, -1));
+          } else {
+            addWords(target, piece);
+          }
+        }
+      };
+
+      for (const block of text.trim().split(/\n\s*\n/)) {
+        const lines = block.split("\n").filter((line) => line.trim() !== "");
+        let list = null;
+        let paragraph = null;
+        for (const line of lines) {
+          const item = line.match(LIST_ITEM);
+          const heading = line.match(/^\s*#{1,6}\s+(.*)$/);
+          if (item) {
+            paragraph = null;
+            const tag = item[1] ? "ol" : "ul";
+            if (!list || list.localName !== tag) {
+              list = parent.appendChild(el(tag));
+            }
+            addInline(list.appendChild(el("li")), item[2]);
+          } else if (heading) {
+            list = paragraph = null;
+            addInline(parent.appendChild(el("p", "heading")), heading[1]);
+          } else {
+            list = null;
+            if (paragraph) paragraph.append(el("br"));
+            else paragraph = parent.appendChild(el("p"));
+            addInline(paragraph, line);
+          }
+        }
       }
-      scrollChat();
+      return n;
     }
+
+    // Keep the word Uncle is saying in view when a reply is taller than
+    // his bubble.
+    replyEl.addEventListener("animationstart", ({ target }) => {
+      if (!target.classList?.contains("word")) return;
+      const bottom = target.offsetTop + target.offsetHeight + 14;
+      if (bottom > replyEl.scrollTop + replyEl.clientHeight) {
+        replyEl.scrollTo({ top: bottom - replyEl.clientHeight, behavior: "smooth" });
+      }
+    });
 
     function setWaiting(on) {
       waiting = on;
       send.disabled = on;
-      for (const chip of $("suggestions").children) chip.disabled = on;
     }
 
     async function ask(message) {
       if (!message || waiting) return;
       setWaiting(true);
-      addBubble("user", message);
-      const bubble = addTyping();
+      think(message);
 
       try {
         const res = await fetch("/chat", {
@@ -330,10 +444,10 @@
           // Show what went wrong, but keep it out of history, so Uncle never
           // reads his own error messages back as things he said.
           const error = data.error ?? "Uncle cannot answer now. Try again.";
-          await settle(bubble, error, true);
+          await say(error, true);
           return;
         }
-        await settle(bubble, data.reply, false);
+        await say(data.reply);
         history.push({ role: "user", content: message });
         history.push({ role: "assistant", content: data.reply });
         // Put the places Uncle recommends on the cards and the map.
@@ -341,8 +455,7 @@
           showPicks(data.places).catch((err) => console.error(err));
         }
       } catch (err) {
-        await settle(
-          bubble,
+        await say(
           err.name === "TimeoutError"
             ? "Uncle took too long. Try again."
             : "Cannot reach Uncle. Try again.",
@@ -362,14 +475,7 @@
       ask(message);
     });
 
-    for (const text of SUGGESTIONS) {
-      const chip = el("button", "suggestion", text);
-      chip.type = "button";
-      chip.addEventListener("click", () => ask(text));
-      $("suggestions").append(chip);
-    }
-
-    addBubble("assistant", "Eh, what you want to eat? Don't waste my time.");
+    say("Eh, what you want to eat? Don't waste my time.");
 
     // ---- Map and nearby places ------------------------------------------------
 
