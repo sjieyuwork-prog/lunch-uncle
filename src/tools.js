@@ -241,33 +241,60 @@ export function formatForecast(payload, area) {
 // get_bus_arrivals
 // ---------------------------------------------------------------------------
 
-async function getBusArrivals({ stop_code }) {
-  const url = `${BUS_URL}?id=${encodeURIComponent(stop_code)}`;
-  const res = await fetch(url);
+async function getBusArrivals(args) {
+  const stopCode = normaliseStopCode(args.stop_code);
+  if (!stopCode) {
+    return { error: "stop_code must be a five-digit bus stop code" };
+  }
+  const res = await fetch(`${BUS_URL}?id=${stopCode}`);
   if (!res.ok) {
     return { error: `Bus API returned ${res.status}` };
   }
-  return formatBusArrivals(await res.json(), stop_code);
+  return formatBusArrivals(await res.json(), stopCode, Date.now());
 }
 
 /**
- * Reduce an arrivelah response to service numbers and minutes to arrival.
+ * Turn the model's stop code into five digits, putting back a dropped
+ * leading zero (7361 becomes "07361"). Returns null if it is not digits.
  */
-export function formatBusArrivals(payload, stopCode) {
+export function normaliseStopCode(code) {
+  const digits = String(code ?? "").trim();
+  return /^\d{1,5}$/.test(digits) ? digits.padStart(5, "0") : null;
+}
+
+/**
+ * Reduce an arrivelah response to service numbers and whole minutes until
+ * each bus arrives, counted from now (a timestamp in milliseconds).
+ */
+export function formatBusArrivals(payload, stopCode, now) {
+  // arrivelah answers a bad stop code with HTTP 200 and an error field.
+  if (payload?.error) {
+    return { stop_code: stopCode, error: payload.error };
+  }
   const services = payload?.services ?? [];
   return {
     stop_code: stopCode,
     services: services.map((s) => ({
       service: s.no,
-      next_min: minutesFromNow(s.next),
-      subsequent_min: minutesFromNow(s.subsequent),
+      next_min: minutesUntil(s.next, now),
+      subsequent_min: minutesUntil(s.subsequent, now),
     })),
   };
 }
 
-function minutesFromNow(arrival) {
-  if (!arrival || typeof arrival.duration_ms !== "number") {
+// Prefer the arrival time: duration_ms is fixed when arrivelah builds the
+// response, so it goes stale while the response sits in a cache. Round
+// down, so a bus 90 seconds away shows as 1 minute, not 2.
+function minutesUntil(arrival, now) {
+  if (!arrival) {
     return null;
   }
-  return Math.max(0, Math.round(arrival.duration_ms / 60000));
+  const ms =
+    typeof arrival.time === "string"
+      ? Date.parse(arrival.time) - now
+      : arrival.duration_ms;
+  if (typeof ms !== "number" || Number.isNaN(ms)) {
+    return null;
+  }
+  return Math.max(0, Math.floor(ms / 60000));
 }
