@@ -9,7 +9,12 @@
 // CT Hub 2, 114 Lavender Street.
 export const CT_HUB_2 = { latitude: 1.3115, longitude: 103.8615 };
 
+const EARTH_RADIUS_METRES = 6371000;
+const METRES_PER_DEGREE = (EARTH_RADIUS_METRES * Math.PI) / 180;
+
 const SEARCH_RADIUS_METRES = 800;
+const MIN_SEARCH_RADIUS_METRES = 100;
+const MAX_SEARCH_RADIUS_METRES = 5000;
 const MAX_PLACES = 10;
 const FORECAST_AREA = "Kallang";
 
@@ -28,7 +33,7 @@ export const toolDefinitions = [
     function: {
       name: "find_lunch_places",
       description:
-        "Search for places to eat near CT Hub 2. Returns name, rating, distance and whether it is open now.",
+        "Search for places to eat near CT Hub 2. Returns name, rating, straight-line distance in metres and open_now (true, false, or null if unknown), nearest first.",
       parameters: {
         type: "object",
         properties: {
@@ -40,6 +45,11 @@ export const toolDefinitions = [
           open_now: {
             type: "boolean",
             description: "Only return places that are open right now.",
+          },
+          max_distance_m: {
+            type: "integer",
+            description:
+              "How far from CT Hub 2 to search, in metres. Defaults to 800, a short walk. Up to 5000 if the user will take a bus or cab.",
           },
         },
         required: ["query"],
@@ -100,6 +110,10 @@ export async function executeTool(name, args, env) {
 // ---------------------------------------------------------------------------
 
 async function findLunchPlaces(args, env) {
+  if (typeof args.query !== "string" || args.query.trim() === "") {
+    return { error: "query is required" };
+  }
+
   const res = await fetch(PLACES_URL, {
     method: "POST",
     headers: {
@@ -116,40 +130,74 @@ async function findLunchPlaces(args, env) {
   }
 
   const data = await res.json();
-  return { places: formatPlaces(data.places ?? [], CT_HUB_2) };
+  const radius = searchRadius(args.max_distance_m);
+  return { places: formatPlaces(data.places ?? [], CT_HUB_2, radius) };
 }
 
 /**
  * Build the Text Search request body for a lunch query near CT Hub 2.
+ * Results are restricted to a box around CT Hub 2 that fits the search
+ * radius, so far-away famous places cannot crowd out nearby ones.
  */
-export function buildPlacesRequest({ query, open_now = false }) {
+export function buildPlacesRequest({ query, open_now = false, max_distance_m }) {
   return {
     textQuery: query,
     includedType: "restaurant",
     openNow: open_now,
     pageSize: MAX_PLACES,
-    locationBias: {
-      circle: { center: CT_HUB_2, radius: SEARCH_RADIUS_METRES },
+    locationRestriction: {
+      rectangle: boxAround(CT_HUB_2, searchRadius(max_distance_m)),
     },
   };
 }
 
 /**
- * Shape Places API results into the fields Uncle needs.
+ * The search radius in metres: what the model asked for, kept between
+ * 100 m and 5 km, or the walking-distance default if it did not ask.
  */
-export function formatPlaces(places, origin) {
-  return places.map(({ displayName, rating, location }) => ({
-    name: displayName?.text ?? "Unnamed",
-    rating: rating ?? null,
-    distance_m: Math.round(haversineMetres(origin, location)),
-  }));
+export function searchRadius(requested) {
+  const metres = Number(requested);
+  if (!(metres > 0)) {
+    return SEARCH_RADIUS_METRES;
+  }
+  return Math.min(
+    Math.max(Math.round(metres), MIN_SEARCH_RADIUS_METRES),
+    MAX_SEARCH_RADIUS_METRES,
+  );
+}
+
+// The smallest latitude/longitude box that holds a circle of this radius.
+function boxAround({ latitude, longitude }, metres) {
+  const dLat = metres / METRES_PER_DEGREE;
+  const dLon = dLat / Math.cos((latitude * Math.PI) / 180);
+  return {
+    low: { latitude: latitude - dLat, longitude: longitude - dLon },
+    high: { latitude: latitude + dLat, longitude: longitude + dLon },
+  };
+}
+
+/**
+ * Shape Places API results into the fields Uncle needs, nearest first.
+ * The search box's corners reach past the radius, so drop places beyond it.
+ */
+export function formatPlaces(places, origin, maxDistance = Infinity) {
+  return places
+    .filter(({ location }) => location)
+    .map(({ displayName, rating, location, currentOpeningHours }) => ({
+      name: displayName?.text ?? "Unnamed",
+      rating: rating ?? null,
+      distance_m: Math.round(haversineMetres(origin, location)),
+      open_now: currentOpeningHours?.openNow ?? null,
+    }))
+    .filter((place) => place.distance_m <= maxDistance)
+    .sort((a, b) => a.distance_m - b.distance_m);
 }
 
 /**
  * Great-circle distance between two {latitude, longitude} points, in metres.
  */
 export function haversineMetres(a, b) {
-  const R = 6371000;
+  const R = EARTH_RADIUS_METRES;
   const toRad = (deg) => (deg * Math.PI) / 180;
   const dLat = toRad(b.latitude - a.latitude);
   const dLon = toRad(b.longitude - a.longitude);
