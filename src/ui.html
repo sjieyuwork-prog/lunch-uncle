@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Lunch Uncle</title>
   <style>
-    :root { --uncle: #fde68a; --you: #dbeafe; --ink: #1f2937; }
+    :root { --uncle: #fde68a; --you: #dbeafe; --error: #fecaca; --ink: #1f2937; }
     * { box-sizing: border-box; }
     body {
       margin: 0; font-family: system-ui, sans-serif; color: var(--ink);
@@ -21,6 +21,7 @@
     }
     .uncle { background: var(--uncle); align-self: flex-start; border-bottom-left-radius: .25rem; }
     .you { background: var(--you); align-self: flex-end; border-bottom-right-radius: .25rem; }
+    .error { background: var(--error); }
     form { display: flex; gap: .5rem; padding: 1rem; background: #fff; border-top: 1px solid #e5e7eb; }
     input { flex: 1; padding: .6rem .9rem; font-size: 1rem; border: 1px solid #d1d5db; border-radius: .5rem; }
     button { padding: .6rem 1.2rem; font-size: 1rem; border: 0; border-radius: .5rem; background: var(--ink); color: #fff; cursor: pointer; }
@@ -54,6 +55,8 @@
     // its cache between turns. randomUUID needs HTTPS or localhost.
     const session =
       crypto.randomUUID?.() ?? Math.random().toString(36).slice(2);
+    // The server gives up on a turn well before this.
+    const REPLY_TIMEOUT_MS = 90_000;
 
     function addBubble(role, text) {
       const div = document.createElement("div");
@@ -62,6 +65,11 @@
       chat.appendChild(div);
       chat.scrollTop = chat.scrollHeight;
       return div;
+    }
+
+    function showError(bubble, text) {
+      bubble.textContent = text;
+      bubble.classList.add("error");
     }
 
     form.addEventListener("submit", async (event) => {
@@ -83,14 +91,26 @@
             history: history.slice(-MAX_HISTORY_MESSAGES),
             message,
           }),
+          signal: AbortSignal.timeout?.(REPLY_TIMEOUT_MS),
         });
-        const data = await res.json();
-        const reply = data.reply ?? data.error ?? "No reply.";
-        thinking.textContent = reply;
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || typeof data.reply !== "string" || data.reply === "") {
+          // Show what went wrong, but keep it out of history, so Uncle never
+          // reads his own error messages back as things he said.
+          const error = data.error ?? "Uncle cannot answer now. Try again.";
+          showError(thinking, error);
+          return;
+        }
+        thinking.textContent = data.reply;
         history.push({ role: "user", content: message });
-        history.push({ role: "assistant", content: reply });
+        history.push({ role: "assistant", content: data.reply });
       } catch (err) {
-        thinking.textContent = "Cannot reach Uncle. Try again.";
+        showError(
+          thinking,
+          err.name === "TimeoutError"
+            ? "Uncle took too long. Try again."
+            : "Cannot reach Uncle. Try again.",
+        );
       } finally {
         send.disabled = false;
         input.focus();
