@@ -8,6 +8,11 @@ type = "Text"
 globs = ["**/*.html"]
 fallthrough = false
 
+# Static files, such as Uncle's picture, are served from public/. Any
+# other path goes to the Worker.
+[assets]
+directory = "./public"
+
 # Each client IP gets 30 requests a minute, shared by /chat and /places
 # (see src/http.js). Bindings that
 # share a namespace_id in one Cloudflare account share their counters, so
