@@ -98,12 +98,14 @@ export const toolDefinitions = [
 /**
  * Run one tool call requested by the model and return the result as a string.
  * Never throws: a failure becomes an error result the model can work with.
+ * found, if given, collects the full Places results the model was shown,
+ * by place id, so the page can show cards for the ones Uncle recommends.
  */
-export async function executeTool(name, args, env) {
+export async function executeTool(name, args, env, found) {
   try {
     switch (name) {
       case "find_lunch_places":
-        return JSON.stringify(await findLunchPlaces(args, env));
+        return JSON.stringify(await findLunchPlaces(args, env, found));
       case "get_rain_forecast":
         return JSON.stringify(await getRainForecast());
       case "get_bus_arrivals":
@@ -123,7 +125,24 @@ export async function executeTool(name, args, env) {
 // find_lunch_places
 // ---------------------------------------------------------------------------
 
-async function findLunchPlaces(args, env) {
+// Besides what the model reads, ask for what the page's place cards show
+// (address, review count, Maps link, photos and reviews), so a place Uncle
+// recommends becomes a card without another request. Reviews make each
+// search an Enterprise + Atmosphere request.
+const PLACES_FIELD_MASK = [
+  "places.id",
+  "places.displayName",
+  "places.formattedAddress",
+  "places.location",
+  "places.rating",
+  "places.userRatingCount",
+  "places.currentOpeningHours",
+  "places.googleMapsUri",
+  "places.photos",
+  "places.reviews",
+].join(",");
+
+async function findLunchPlaces(args, env, found) {
   if (typeof args.query !== "string" || args.query.trim() === "") {
     return { error: "query is required" };
   }
@@ -133,8 +152,7 @@ async function findLunchPlaces(args, env) {
     headers: {
       "content-type": "application/json",
       "X-Goog-Api-Key": env.GOOGLE_PLACES_API_KEY,
-      "X-Goog-FieldMask":
-        "places.id,places.displayName,places.location,places.rating,places.currentOpeningHours",
+      "X-Goog-FieldMask": PLACES_FIELD_MASK,
     },
     body: JSON.stringify(buildPlacesRequest(args)),
     signal: AbortSignal.timeout(TOOL_TIMEOUT_MS),
@@ -145,8 +163,18 @@ async function findLunchPlaces(args, env) {
   }
 
   const data = await res.json();
+  const places = data.places ?? [];
   const radius = searchRadius(args.max_distance_m);
-  return { places: formatPlaces(data.places ?? [], CT_HUB_2, radius) };
+  // Keep the full results the model is shown, for the page's cards.
+  for (const place of places) {
+    const shown =
+      place.location &&
+      Math.round(haversineMetres(CT_HUB_2, place.location)) <= radius;
+    if (place.id && shown) {
+      found?.set(place.id, place);
+    }
+  }
+  return { places: formatPlaces(places, CT_HUB_2, radius) };
 }
 
 /**

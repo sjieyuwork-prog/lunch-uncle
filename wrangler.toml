@@ -8,7 +8,8 @@ type = "Text"
 globs = ["**/*.html"]
 fallthrough = false
 
-# Each client IP gets 30 chats a minute (see src/chat.js). Bindings that
+# Each client IP gets 30 requests a minute, shared by /chat and /places
+# (see src/http.js). Bindings that
 # share a namespace_id in one Cloudflare account share their counters, so
 # give each team's Worker its own number.
 [[ratelimits]]

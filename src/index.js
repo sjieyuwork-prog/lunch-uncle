@@ -1,5 +1,6 @@
 import ui from "./ui.html";
 import { handleChat } from "./chat.js";
+import { handleConfig, handlePlaces } from "./map.js";
 
 export default {
   async fetch(request, env) {
@@ -13,6 +14,14 @@ export default {
 
     if (request.method === "POST" && pathname === "/chat") {
       return handleChat(request, env);
+    }
+
+    if (request.method === "GET" && pathname === "/config") {
+      return handleConfig(env);
+    }
+
+    if (request.method === "GET" && pathname === "/places") {
+      return handlePlaces(request, env);
     }
 
     return new Response("Not found", { status: 404 });

@@ -1,16 +1,20 @@
 import { runLoop } from "./loop.js";
+import { cardsForReply } from "./cards.js";
+import { json, withinRateLimit } from "./http.js";
 
 // Limits on what one /chat request can make the model read.
 export const MAX_BODY_BYTES = 64 * 1024;
 export const MAX_MESSAGE_CHARS = 1000;
 export const MAX_HISTORY_MESSAGES = 20;
+export const MAX_KNOWN_PLACES = 10;
 
 const HISTORY_ROLES = new Set(["user", "assistant"]);
 // The page's conversation id, sent on as the x-opencode-session header.
 const SESSION_ID = /^[A-Za-z0-9-]{8,64}$/;
 
 /**
- * Handle POST /chat: check the request, run one turn, and reply with JSON.
+ * Handle POST /chat: check the request, run one turn, and reply with JSON:
+ * Uncle's reply, and cards for the places he recommends in it.
  */
 export async function handleChat(request, env) {
   if (!(await withinRateLimit(request, env))) {
@@ -46,34 +50,28 @@ export async function handleChat(request, env) {
   }
 
   try {
+    // The places Uncle's searches find this turn, so the page can show
+    // cards for the ones he recommends.
+    const found = new Map();
     const reply = await runLoop(
       turn.history,
       turn.message,
       env,
       turn.sessionId,
+      found,
     );
-    return json({ reply });
+    // Cards are extra: if they fail, Uncle's reply still goes out.
+    const places = await cardsForReply(reply, found, turn.known, env).catch(
+      (err) => {
+        console.error("place cards failed:", err);
+        return [];
+      },
+    );
+    return json({ reply, places });
   } catch (err) {
     console.error("chat failed:", err);
     return json({ error: "Uncle cannot think right now, try again later." }, 500);
   }
-}
-
-/**
- * Count this request against its client's limit, set in wrangler.toml.
- * Without the CHAT_LIMITER binding, as in tests, nothing is limited.
- */
-async function withinRateLimit(request, env) {
-  if (!env.CHAT_LIMITER) {
-    return true;
-  }
-  // The hostname keeps apart Workers that share a limiter namespace.
-  const { hostname } = new URL(request.url);
-  const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
-  const { success } = await env.CHAT_LIMITER.limit({
-    key: `${hostname} ${ip}`,
-  });
-  return success;
 }
 
 /**
@@ -103,7 +101,22 @@ function parseTurn(body) {
   }
 
   const { session } = body;
+  // Places the page already has cards for, as {id, name}. Anything else in
+  // the list is dropped, and so is everything past the first few.
+  const known = (Array.isArray(body.known) ? body.known : [])
+    .filter(
+      (p) =>
+        p !== null &&
+        typeof p === "object" &&
+        typeof p.id === "string" &&
+        typeof p.name === "string" &&
+        p.id.length <= 200 &&
+        p.name.length <= 200,
+    )
+    .slice(0, MAX_KNOWN_PLACES)
+    .map(({ id, name }) => ({ id, name }));
   return {
+    known,
     message,
     history: history
       .slice(-MAX_HISTORY_MESSAGES)
@@ -122,11 +135,4 @@ function isChatMessage(entry) {
     HISTORY_ROLES.has(entry.role) &&
     typeof entry.content === "string"
   );
-}
-
-function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "content-type": "application/json" },
-  });
 }
