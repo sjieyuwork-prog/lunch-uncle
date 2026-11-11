@@ -18,6 +18,12 @@ const MAX_SEARCH_RADIUS_METRES = 5000;
 const MAX_PLACES = 10;
 const FORECAST_AREA = "Kallang";
 
+const TOOL_TIMEOUT_MS = 5_000;
+// Cloudflare keeps these GET responses at the edge for this many seconds.
+// The forecast changes about every half hour; arrivelah allows 15 s.
+const FORECAST_CACHE_SECONDS = 300;
+const BUS_CACHE_SECONDS = 15;
+
 const PLACES_URL = "https://places.googleapis.com/v1/places:searchText";
 const FORECAST_URL =
   "https://api-open.data.gov.sg/v2/real-time/api/two-hr-forecast";
@@ -91,17 +97,25 @@ export const toolDefinitions = [
 
 /**
  * Run one tool call requested by the model and return the result as a string.
+ * Never throws: a failure becomes an error result the model can work with.
  */
 export async function executeTool(name, args, env) {
-  switch (name) {
-    case "find_lunch_places":
-      return JSON.stringify(await findLunchPlaces(args, env));
-    case "get_rain_forecast":
-      return JSON.stringify(await getRainForecast());
-    case "get_bus_arrivals":
-      return JSON.stringify(await getBusArrivals(args));
-    default:
-      return JSON.stringify({ error: `Unknown tool: ${name}` });
+  try {
+    switch (name) {
+      case "find_lunch_places":
+        return JSON.stringify(await findLunchPlaces(args, env));
+      case "get_rain_forecast":
+        return JSON.stringify(await getRainForecast());
+      case "get_bus_arrivals":
+        return JSON.stringify(await getBusArrivals(args));
+      default:
+        return JSON.stringify({ error: `Unknown tool: ${name}` });
+    }
+  } catch (err) {
+    // A network error, timeout or non-JSON reply from one API should not
+    // end the whole turn, or stop the other tools in the same round.
+    console.error(`${name} failed:`, err);
+    return JSON.stringify({ error: `${name} failed: ${err.message}` });
   }
 }
 
@@ -123,6 +137,7 @@ async function findLunchPlaces(args, env) {
         "places.id,places.displayName,places.location,places.rating,places.currentOpeningHours",
     },
     body: JSON.stringify(buildPlacesRequest(args)),
+    signal: AbortSignal.timeout(TOOL_TIMEOUT_MS),
   });
 
   if (!res.ok) {
@@ -214,7 +229,10 @@ export function haversineMetres(a, b) {
 // ---------------------------------------------------------------------------
 
 async function getRainForecast() {
-  const res = await fetch(FORECAST_URL);
+  const res = await fetch(FORECAST_URL, {
+    signal: AbortSignal.timeout(TOOL_TIMEOUT_MS),
+    cf: { cacheTtl: FORECAST_CACHE_SECONDS },
+  });
   if (!res.ok) {
     return { error: `Forecast API returned ${res.status}` };
   }
@@ -248,7 +266,10 @@ async function getBusArrivals(args) {
   if (!stopCode) {
     return { error: "stop_code must be a five-digit bus stop code" };
   }
-  const res = await fetch(`${BUS_URL}?id=${stopCode}`);
+  const res = await fetch(`${BUS_URL}?id=${stopCode}`, {
+    signal: AbortSignal.timeout(TOOL_TIMEOUT_MS),
+    cf: { cacheTtl: BUS_CACHE_SECONDS },
+  });
   if (!res.ok) {
     return { error: `Bus API returned ${res.status}` };
   }

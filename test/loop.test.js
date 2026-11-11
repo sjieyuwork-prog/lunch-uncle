@@ -11,31 +11,37 @@ const FALLBACK_REPLY = "Just go Berseh Food Centre lah.";
 
 const say = (content) => ({ role: "assistant", content });
 
-const rainCall = {
+/**
+ * An assistant message that calls tools, one [name, args] pair per call.
+ */
+const callTools = (...calls) => ({
   role: "assistant",
   content: null,
-  tool_calls: [
-    {
-      id: "call_1",
-      type: "function",
-      function: { name: "get_rain_forecast", arguments: "{}" },
-    },
-  ],
-};
+  tool_calls: calls.map(([name, args], i) => ({
+    id: `call_${i}`,
+    type: "function",
+    function: { name, arguments: JSON.stringify(args) },
+  })),
+});
+
+const rainCall = callTools(["get_rain_forecast", {}]);
 
 /**
- * Stand in for the network. The model's nth reply is reply(n), and every
- * tool API answers with an empty payload. Returns live call counts.
+ * Stand in for the network. The model's nth reply is reply(n), and tool
+ * APIs answer with tool(url, init), an empty payload by default. Returns
+ * live call counts, the model request bodies and the tool request options.
  */
-function stubFetch(t, reply) {
-  const calls = { model: 0, tools: 0 };
-  t.mock.method(globalThis, "fetch", async (url) => {
+function stubFetch(t, reply, tool = () => Response.json({})) {
+  const calls = { model: 0, tools: 0, bodies: [], toolInits: [] };
+  t.mock.method(globalThis, "fetch", async (url, init) => {
     if (String(url).endsWith("/chat/completions")) {
       calls.model += 1;
+      calls.bodies.push(JSON.parse(init.body));
       return Response.json({ choices: [{ message: reply(calls.model) }] });
     }
     calls.tools += 1;
-    return Response.json({});
+    calls.toolInits.push(init);
+    return tool(url, init);
   });
   return calls;
 }
@@ -72,4 +78,45 @@ test("the loop gives up after MAX_ROUNDS rounds of tool calls", async (t) => {
     reply,
     "Uncle tried too many times already. Ask something simpler.",
   );
+});
+
+test("a tool that fails does not end the turn", async (t) => {
+  t.mock.method(console, "log", () => {});
+  t.mock.method(console, "error", () => {});
+  const busCall = callTools(["get_bus_arrivals", { stop_code: "07361" }]);
+  const calls = stubFetch(
+    t,
+    (n) => [rainCall, busCall, say("Both sites down lah.")][n - 1],
+    // The forecast times out, then the bus API sends an HTML error page.
+    (url) => {
+      if (String(url).includes("data.gov.sg")) {
+        throw new DOMException("The operation timed out.", "TimeoutError");
+      }
+      return new Response("<html>Bad gateway</html>");
+    },
+  );
+
+  const reply = await runLoop([], "rain or bus?", KEYS);
+  assert.equal(reply, "Both sites down lah.");
+  for (const body of calls.bodies.slice(1)) {
+    const result = body.messages.at(-1);
+    assert.equal(result.role, "tool");
+    assert.match(JSON.parse(result.content).error, /failed/);
+  }
+});
+
+test("every tool request has a timeout", async (t) => {
+  t.mock.method(console, "log", () => {});
+  const allTools = callTools(
+    ["find_lunch_places", { query: "chicken rice" }],
+    ["get_rain_forecast", {}],
+    ["get_bus_arrivals", { stop_code: "07361" }],
+  );
+  const calls = stubFetch(t, (n) => (n === 1 ? allTools : say("Ok lah.")));
+
+  await runLoop([], "lunch, rain and bus?", KEYS);
+  assert.equal(calls.toolInits.length, 3);
+  for (const init of calls.toolInits) {
+    assert.ok(init?.signal instanceof AbortSignal);
+  }
 });
