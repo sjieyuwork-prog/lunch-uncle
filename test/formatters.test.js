@@ -26,11 +26,33 @@ test("formatForecast picks the requested area", () => {
     },
   };
 
-  assert.deepEqual(formatForecast(payload, "Kallang"), {
+  assert.deepEqual(formatForecast(payload, "Kallang", Date.now()), {
     area: "Kallang",
     forecast: "Light Rain",
     valid_period: "12 pm to 2 pm",
+    stale: false,
   });
+});
+
+test("formatForecast flags a forecast whose period has ended", () => {
+  const payload = {
+    data: {
+      items: [
+        {
+          valid_period: {
+            start: "2026-11-11T12:00:00+08:00",
+            end: "2026-11-11T14:00:00+08:00",
+            text: "12.00 pm to 2.00 pm",
+          },
+          forecasts: [{ area: "Kallang", forecast: "Showers" }],
+        },
+      ],
+    },
+  };
+  const at = (time) => Date.parse(`2026-11-11T${time}+08:00`);
+
+  assert.equal(formatForecast(payload, "Kallang", at("13:30:00")).stale, false);
+  assert.equal(formatForecast(payload, "Kallang", at("14:30:00")).stale, true);
 });
 
 test("formatBusArrivals counts minutes from arrival time, rounded down", () => {

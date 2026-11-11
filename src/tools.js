@@ -61,7 +61,7 @@ export const toolDefinitions = [
     function: {
       name: "get_rain_forecast",
       description:
-        "Get the two-hour weather forecast for the Kallang area, which covers CT Hub 2.",
+        "Get the two-hour weather forecast for the Kallang area, which covers CT Hub 2. stale is true if the forecast period has already ended, so it may be out of date.",
       parameters: { type: "object", properties: {} },
     },
   },
@@ -218,22 +218,24 @@ async function getRainForecast() {
   if (!res.ok) {
     return { error: `Forecast API returned ${res.status}` };
   }
-  return formatForecast(await res.json(), FORECAST_AREA);
+  return formatForecast(await res.json(), FORECAST_AREA, Date.now());
 }
 
 /**
  * Pull one area's forecast out of the data.gov.sg two-hour forecast payload.
+ * stale is true if the forecast period ended before now (in milliseconds).
  */
-export function formatForecast(payload, area) {
+export function formatForecast(payload, area, now) {
   const item = payload?.data?.items?.[0];
   if (!item) {
     return { error: "No forecast available" };
   }
-  const entry = item.forecasts.find((f) => f.area === area);
+  const entry = item.forecasts?.find((f) => f.area === area);
   return {
     area,
     forecast: entry?.forecast ?? "Unknown",
     valid_period: item.valid_period?.text ?? null,
+    stale: Date.parse(item.valid_period?.end) < now,
   };
 }
 
