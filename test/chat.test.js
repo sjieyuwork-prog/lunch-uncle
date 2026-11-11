@@ -45,7 +45,7 @@ test("a valid turn gets Uncle's reply", async (t) => {
   const sent = stubModel(t);
   const res = await handleChat(postChat({ message: "will it rain?" }), ENV);
   assert.equal(res.status, 200);
-  assert.deepEqual(await res.json(), { reply: "Can lah." });
+  assert.deepEqual(await res.json(), { reply: "Can lah.", places: [] });
   assert.equal(sent.length, 1);
 });
 
@@ -165,6 +165,74 @@ test("a client over its rate limit gets a 429", async (t) => {
   assert.match((await limited.json()).error, /Wait a minute/);
   assert.equal(sent.length, 1);
   assert.deepEqual(keys, ["localhost 203.0.113.7", "localhost 203.0.113.7"]);
+});
+
+test("a reply that names places comes with their cards", async (t) => {
+  t.mock.method(console, "log", () => {});
+  const search = {
+    places: [
+      {
+        id: "p1",
+        displayName: { text: "Makuake" },
+        formattedAddress: "40 Hamilton Rd, Singapore 209210",
+        location: { latitude: 1.3116, longitude: 103.8615 },
+        rating: 4.8,
+        userRatingCount: 75,
+        googleMapsUri: "https://maps.google.com/?cid=1",
+        photos: [{ name: "places/p1/photos/a" }],
+        reviews: [{ rating: 5, text: { text: "Shiok!" } }],
+      },
+      {
+        id: "p2",
+        displayName: { text: "Tipo Osteria" },
+        location: { latitude: 1.3119, longitude: 103.8612 },
+      },
+    ],
+  };
+  let modelCalls = 0;
+  t.mock.method(globalThis, "fetch", async (url) => {
+    const href = String(url);
+    if (href.endsWith("/chat/completions")) {
+      modelCalls += 1;
+      const message =
+        modelCalls === 1
+          ? {
+              role: "assistant",
+              content: null,
+              tool_calls: [
+                {
+                  id: "c1",
+                  type: "function",
+                  function: {
+                    name: "find_lunch_places",
+                    arguments: '{"query":"japanese"}',
+                  },
+                },
+              ],
+            }
+          : { role: "assistant", content: "Go Makuake lah. Shiok one." };
+      return Response.json({ choices: [{ message }] });
+    }
+    if (href.endsWith(":searchText")) {
+      return Response.json(search);
+    }
+    if (href.includes("/photos/a/media")) {
+      return Response.json({ photoUri: "https://lh3.googleusercontent.com/a" });
+    }
+    return new Response("Not found", { status: 404 });
+  });
+
+  const res = await handleChat(postChat({ message: "japanese food?" }), ENV);
+  const body = await res.json();
+  assert.equal(body.reply, "Go Makuake lah. Shiok one.");
+  // Only the place Uncle named, measured from CT Hub 2, photo ready to show.
+  assert.deepEqual(
+    body.places.map(({ name, distance_m }) => [name, distance_m]),
+    [["Makuake", 11]],
+  );
+  assert.equal(body.places[0].maps_url, "https://maps.google.com/?cid=1");
+  assert.equal(body.places[0].photos[0].url, "https://lh3.googleusercontent.com/a");
+  assert.equal(body.places[0].reviews[0].text, "Shiok!");
 });
 
 test("the page's session id reaches the model provider", async (t) => {

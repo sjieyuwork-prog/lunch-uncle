@@ -28,12 +28,14 @@ const FOOD_WORDS = /\b(eat|lunch|food|makan|hungry|restaurant|hawker)\b/i;
  * sessionId identifies the conversation to the OpenCode Go endpoint, which
  * uses it to route every model call the same way and so reuse its cache.
  * Without one from the page, each turn gets its own.
+ * found collects the places Uncle's searches return this turn, by place id.
  */
 export async function runLoop(
   history,
   message,
   env,
   sessionId = crypto.randomUUID(),
+  found = new Map(),
 ) {
   // If the Places key is missing, Uncle cannot search, so give food questions
   // a safe answer. Rain and bus questions do not need the key.
@@ -84,7 +86,7 @@ export async function runLoop(
     messages.push(assistant);
 
     const results = await Promise.all(
-      toolCalls.map((call, i) => runToolCall(call, i, env, toolResults)),
+      toolCalls.map((call, i) => runToolCall(call, i, env, toolResults, found)),
     );
     toolCalls.forEach((call, i) => {
       messages.push({
@@ -103,7 +105,7 @@ export async function runLoop(
  * Calls past the per-round cap, and calls without a name or with bad
  * arguments, get an error result instead, so the model can try again.
  */
-async function runToolCall(call, index, env, toolResults) {
+async function runToolCall(call, index, env, toolResults, found) {
   if (index >= MAX_TOOL_CALLS_PER_ROUND) {
     return JSON.stringify({
       error: `Too many tool calls at once. Make at most ${MAX_TOOL_CALLS_PER_ROUND} per reply.`,
@@ -121,7 +123,7 @@ async function runToolCall(call, index, env, toolResults) {
   const key = `${name} ${JSON.stringify(args)}`;
   if (!toolResults.has(key)) {
     console.log(`tool ${name}`, args);
-    toolResults.set(key, executeTool(name, args, env));
+    toolResults.set(key, executeTool(name, args, env, found));
   }
   return toolResults.get(key);
 }

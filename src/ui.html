@@ -5,47 +5,231 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Lunch Uncle</title>
   <style>
-    :root { --uncle: #fde68a; --you: #dbeafe; --error: #fecaca; --ink: #1f2937; }
+    :root {
+      color-scheme: dark;
+      --bg: #060913;
+      --panel: rgba(13, 19, 36, 0.66);
+      --card: rgba(4, 8, 20, 0.6);
+      --line: rgba(148, 163, 184, 0.16);
+      --text: #e2e8f0;
+      --muted: #8b98ad;
+      --accent: #22d3ee;
+      --accent-2: #a78bfa;
+      --pin: #f472b6;
+      --uncle: rgba(34, 211, 238, 0.08);
+      --uncle-line: rgba(34, 211, 238, 0.32);
+      --error: rgba(248, 113, 113, 0.12);
+      --error-line: rgba(248, 113, 113, 0.5);
+      --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+      --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    }
     * { box-sizing: border-box; }
     body {
-      margin: 0; font-family: system-ui, sans-serif; color: var(--ink);
-      background: #f9fafb; display: flex; flex-direction: column; height: 100vh;
+      margin: 0; height: 100vh; display: flex; flex-direction: column;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--text);
+      background:
+        radial-gradient(1100px 600px at 0% -10%, rgba(99, 102, 241, 0.22), transparent 60%),
+        radial-gradient(900px 500px at 100% 0%, rgba(34, 211, 238, 0.16), transparent 60%),
+        var(--bg);
     }
-    header { padding: 1rem; background: #fff; border-bottom: 1px solid #e5e7eb; }
-    header h1 { margin: 0; font-size: 1.25rem; }
-    header p { margin: .25rem 0 0; color: #6b7280; font-size: .875rem; }
-    #chat { flex: 1; overflow-y: auto; padding: 1rem; display: flex; flex-direction: column; gap: .5rem; }
-    .bubble {
-      max-width: 75%; padding: .6rem .9rem; border-radius: 1rem; line-height: 1.4;
-      white-space: pre-wrap; word-wrap: break-word;
+    /* A faint grid behind everything, fading out towards the edges. */
+    body::before {
+      content: ""; position: fixed; inset: 0; pointer-events: none;
+      background-image:
+        linear-gradient(rgba(148, 163, 184, 0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(148, 163, 184, 0.05) 1px, transparent 1px);
+      background-size: 44px 44px;
+      mask-image: radial-gradient(circle at 50% 20%, #000, transparent 75%);
     }
-    .uncle { background: var(--uncle); align-self: flex-start; border-bottom-left-radius: .25rem; }
-    .you { background: var(--you); align-self: flex-end; border-bottom-right-radius: .25rem; }
-    .error { background: var(--error); }
-    form { display: flex; gap: .5rem; padding: 1rem; background: #fff; border-top: 1px solid #e5e7eb; }
-    input { flex: 1; padding: .6rem .9rem; font-size: 1rem; border: 1px solid #d1d5db; border-radius: .5rem; }
-    button { padding: .6rem 1.2rem; font-size: 1rem; border: 0; border-radius: .5rem; background: var(--ink); color: #fff; cursor: pointer; }
-    button:disabled { opacity: .5; cursor: default; }
+    a { color: var(--accent); }
+    button { font: inherit; }
+
+    header { display: flex; align-items: center; gap: .75rem; padding: 1rem 1.25rem; }
+    .logo { width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center; font: 800 .95rem/1 var(--mono); color: #04111a; background: conic-gradient(from 200deg, var(--accent), var(--accent-2), var(--pin), var(--accent)); box-shadow: 0 0 24px rgba(34, 211, 238, 0.35); }
+    header h1 { margin: 0; font-size: 1.1rem; letter-spacing: .08em; text-transform: uppercase; }
+    header p { margin: .15rem 0 0; color: var(--muted); font-size: .85rem; }
+
+    .layout { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(340px, 1fr); gap: 1rem; padding: 0 1.25rem 1.25rem; }
+    .panel { min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); box-shadow: 0 24px 60px rgba(2, 6, 23, 0.5); animation: rise .6s var(--ease) both; }
+    .chat-panel { animation-delay: .08s; }
+    .panel-head { display: flex; align-items: center; gap: .6rem; padding: .7rem 1rem; border-bottom: 1px solid var(--line); }
+    .panel-head h2 { margin: 0; font: 600 .78rem/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+    .hint { margin-left: auto; font-size: .78rem; color: var(--muted); }
+    .online { margin-left: auto; display: flex; align-items: center; gap: .4rem; font-size: .78rem; color: var(--muted); }
+    .online::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #34d399; animation: ping 2s infinite; }
+    .ghost { padding: .3rem .7rem; font-size: .78rem; color: var(--text); background: transparent; border: 1px solid var(--line); border-radius: 999px; cursor: pointer; transition: border-color .2s, background .2s; }
+    .ghost:hover { border-color: var(--uncle-line); background: rgba(34, 211, 238, .08); }
+
+    /* Map */
+    #map { position: relative; flex: none; height: 44%; min-height: 230px; border-bottom: 1px solid var(--line); }
+    #map-canvas { position: absolute; inset: 0; }
+    .map-note { position: absolute; inset: 0; display: grid; place-items: center; padding: 1.5rem; overflow: hidden; text-align: center; font-size: .9rem; color: var(--muted); background: radial-gradient(circle at 50% 50%, rgba(34, 211, 238, .08), transparent 70%); transition: opacity .5s ease; }
+    .map-note::after { content: ""; position: absolute; left: 0; right: 0; top: -40%; height: 40%; background: linear-gradient(180deg, transparent, rgba(34, 211, 238, .1), transparent); animation: scan 2.6s linear infinite; }
+    .map-note.hidden { opacity: 0; pointer-events: none; }
+    .pin { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font: 700 .8rem/1 var(--mono); color: #1a0410; background: var(--pin); border: 2px solid rgba(255, 255, 255, .85); box-shadow: 0 0 18px rgba(244, 114, 182, .65); cursor: pointer; transition: transform .25s var(--ease); }
+    .pin.active { transform: scale(1.3); }
+    .you-dot { position: relative; width: 16px; height: 16px; border-radius: 50%; background: var(--accent); border: 2px solid #fff; box-shadow: 0 0 16px rgba(34, 211, 238, .8); }
+    .you-dot::after { content: ""; position: absolute; inset: -12px; border-radius: 50%; border: 2px solid var(--accent); animation: radar 2.2s ease-out infinite; }
+    .basic-map { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; transition: opacity .35s ease, filter .35s ease; }
+    .basic-map.switching { opacity: .15; filter: blur(4px); }
+    .locate { position: absolute; top: 10px; right: 10px; z-index: 2; width: 38px; height: 38px; display: grid; place-items: center; color: var(--accent); background: rgba(6, 9, 19, .78); border: 1px solid var(--uncle-line); border-radius: 50%; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); box-shadow: 0 0 18px rgba(34, 211, 238, .25); cursor: pointer; animation: rise .4s var(--ease) both; transition: transform .2s var(--ease), box-shadow .2s; }
+    .locate:hover { transform: scale(1.08); box-shadow: 0 0 26px rgba(34, 211, 238, .45); }
+    .locate[hidden] { display: none; }
+
+    /* Place cards */
+    .places-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: .9rem 1rem .6rem; }
+    .places { list-style: none; margin: 0; padding: 0; display: grid; gap: .8rem; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); transition: opacity .2s ease, filter .2s ease; }
+    .places.leaving { opacity: 0; filter: blur(4px); }
+    .card { display: flex; flex-direction: column; gap: .45rem; padding: .75rem; background: var(--card); border: 1px solid var(--line); border-radius: 14px; cursor: pointer; animation: rise .5s var(--ease) both; animation-delay: calc(var(--i, 0) * 90ms); transition: transform .25s var(--ease), border-color .25s, box-shadow .25s; }
+    .card:hover { transform: translateY(-3px); border-color: var(--uncle-line); }
+    .card.active { border-color: var(--pin); box-shadow: 0 0 0 1px var(--pin), 0 0 28px rgba(244, 114, 182, .22); }
+    .card.skeleton, .card.empty { cursor: default; }
+    .card.skeleton { min-height: 230px; background: linear-gradient(100deg, rgba(148, 163, 184, .05) 30%, rgba(148, 163, 184, .13) 50%, rgba(148, 163, 184, .05) 70%) 0 0 / 300% 100%; animation: rise .5s var(--ease) both, shimmer 1.4s linear infinite; }
+    .photos { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: .4rem; }
+    .photos figure { margin: 0; min-width: 0; }
+    .photos img { display: block; width: 100%; height: 100px; object-fit: cover; border-radius: 10px; background: rgba(148, 163, 184, .1); opacity: 0; transform: scale(1.03); transition: opacity .5s ease, transform .6s var(--ease); }
+    .photos img.loaded { opacity: 1; transform: none; }
+    .credit { margin-top: .2rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: .66rem; color: var(--muted); }
+    .credit a { color: inherit; }
+    .card h3 { margin: 0; display: flex; align-items: center; gap: .5rem; font-size: .98rem; }
+    .badge { flex: none; width: 1.45rem; height: 1.45rem; border-radius: 50%; display: grid; place-items: center; font: 700 .72rem/1 var(--mono); color: #1a0410; background: var(--pin); }
+    .facts { display: flex; flex-wrap: wrap; gap: .3rem; }
+    .chip { padding: .15rem .5rem; border-radius: 999px; font-size: .72rem; background: rgba(148, 163, 184, .12); }
+    .chip.open { color: #6ee7b7; background: rgba(52, 211, 153, .14); }
+    .chip.closed { color: #fca5a5; background: rgba(248, 113, 113, .14); }
+    .address { margin: 0; font-size: .76rem; color: var(--muted); }
+    .review { margin: 0; padding: .5rem .6rem; font-size: .8rem; background: rgba(148, 163, 184, .06); border-left: 2px solid rgba(167, 139, 250, .55); border-radius: 0 10px 10px 0; }
+    .who { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; font-size: .7rem; color: var(--muted); }
+    .who a { color: var(--text); text-decoration: none; }
+    .avatar { width: 18px; height: 18px; border-radius: 50%; }
+    .stars { color: #fbbf24; letter-spacing: 1px; }
+    .review p { margin: .3rem 0 0; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+    .review.open p { display: block; }
+    .translated { display: block; margin-top: .25rem; font-size: .66rem; color: var(--muted); }
+    .maps-link { align-self: flex-start; margin-top: auto; padding: .3rem .7rem; font-size: .78rem; text-decoration: none; border: 1px solid var(--uncle-line); border-radius: 999px; transition: background .2s; }
+    .maps-link:hover { background: rgba(34, 211, 238, .12); }
+    .attribution { margin: .7rem 0 0; font-size: .68rem; color: var(--muted); }
+
+    /* Chat */
+    .uncle-face { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font: 800 .8rem/1 var(--mono); color: #04111a; background: conic-gradient(from 120deg, var(--accent), var(--accent-2), var(--accent)); }
+    #chat { flex: 1; min-height: 0; overflow-y: auto; padding: 1rem; display: flex; flex-direction: column; gap: .6rem; }
+    .bubble { max-width: 85%; padding: .65rem .9rem; border-radius: 16px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; animation: rise .35s var(--ease) both; transition: opacity .18s ease, filter .18s ease; }
+    .uncle { align-self: flex-start; background: var(--uncle); border: 1px solid var(--uncle-line); border-bottom-left-radius: 4px; box-shadow: 0 0 24px rgba(34, 211, 238, .06); }
+    .you { align-self: flex-end; color: #fff; background: linear-gradient(135deg, #6366f1, #a855f7); border-bottom-right-radius: 4px; box-shadow: 0 10px 26px rgba(99, 102, 241, .35); }
+    .error { background: var(--error); border-color: var(--error-line); }
+    .fade-out { opacity: 0; filter: blur(4px); }
+    .fade-in { animation: settle .35s var(--ease) both; }
+    .word { display: inline-block; animation: settle .45s var(--ease) both; }
+    .typing { display: inline-flex; align-items: center; gap: .3rem; padding: .85rem 1rem; }
+    .typing span { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: blink 1.2s infinite ease-in-out; }
+    .typing span:nth-child(2) { animation-delay: .15s; }
+    .typing span:nth-child(3) { animation-delay: .3s; }
+    .suggestions { display: flex; flex-wrap: wrap; gap: .4rem; padding: 0 1rem .6rem; }
+    .suggestion { padding: .35rem .75rem; font-size: .8rem; color: var(--text); background: rgba(148, 163, 184, .08); border: 1px solid var(--line); border-radius: 999px; cursor: pointer; transition: border-color .2s, background .2s, transform .2s var(--ease); }
+    .suggestion:hover:not(:disabled) { transform: translateY(-1px); border-color: var(--uncle-line); background: rgba(34, 211, 238, .1); }
+    form { display: flex; gap: .5rem; padding: .8rem 1rem 1rem; border-top: 1px solid var(--line); }
+    input { flex: 1; min-width: 0; padding: .75rem 1rem; font-size: 1rem; color: var(--text); background: rgba(2, 6, 23, .6); border: 1px solid var(--line); border-radius: 999px; outline: none; transition: border-color .2s, box-shadow .2s; }
+    input::placeholder { color: var(--muted); }
+    input:focus { border-color: rgba(34, 211, 238, .6); box-shadow: 0 0 0 4px rgba(34, 211, 238, .14); }
+    #send { flex: none; width: 46px; height: 46px; display: grid; place-items: center; color: #04111a; background: linear-gradient(135deg, var(--accent), var(--accent-2)); border: 0; border-radius: 50%; cursor: pointer; transition: transform .15s var(--ease), filter .2s, opacity .2s; }
+    #send:hover { filter: brightness(1.12); }
+    #send:active { transform: scale(.92); }
+    button:disabled { opacity: .45; cursor: default; }
+
+    @keyframes rise { from { opacity: 0; transform: translateY(10px) scale(.98); filter: blur(3px); } to { opacity: 1; transform: none; filter: none; } }
+    @keyframes settle { from { opacity: 0; transform: translateY(3px); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
+    @keyframes blink { 0%, 80%, 100% { opacity: .25; transform: none; } 40% { opacity: 1; transform: translateY(-3px); } }
+    @keyframes ping { from { box-shadow: 0 0 0 0 rgba(52, 211, 153, .6); } to { box-shadow: 0 0 0 8px rgba(52, 211, 153, 0); } }
+    @keyframes radar { from { transform: scale(.4); opacity: .9; } to { transform: scale(1.7); opacity: 0; } }
+    @keyframes scan { to { top: 100%; } }
+    @keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+
+    @media (max-width: 860px) {
+      body { height: auto; min-height: 100vh; }
+      .layout { grid-template-columns: 1fr; }
+      #map { height: 300px; }
+      .chat-panel { height: 78vh; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; }
+    }
   </style>
 </head>
 <body>
   <header>
-    <h1>Lunch Uncle</h1>
-    <p>Tell Uncle what you feel like eating. He is at CT Hub 2, Lavender.</p>
+    <div class="logo" aria-hidden="true">LU</div>
+    <div>
+      <h1>Lunch Uncle</h1>
+      <p>Tell Uncle what you feel like eating. He is at CT Hub 2, Lavender.</p>
+    </div>
   </header>
 
-  <div id="chat"></div>
+  <main class="layout">
+    <section class="panel" aria-label="Map and nearby places">
+      <div class="panel-head">
+        <h2 id="places-title">Nearby</h2>
+        <span id="location-note" class="hint">Locating you…</span>
+        <button id="refresh" class="ghost" type="button">Refresh</button>
+      </div>
+      <div id="map">
+        <div id="map-canvas"></div>
+        <iframe id="basic-map" class="basic-map" title="Map" hidden></iframe>
+        <div id="map-note" class="map-note">Loading map…</div>
+        <button id="locate" class="locate" type="button" aria-label="Show my location" title="Show my location" hidden>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+        </button>
+      </div>
+      <div class="places-scroll">
+        <ol id="places" class="places" aria-live="polite"></ol>
+        <p class="attribution">Places, reviews and photos from Google Maps.</p>
+      </div>
+    </section>
 
-  <form id="form">
-    <input id="input" placeholder="Uncle, where to eat?" autocomplete="off" maxlength="1000" autofocus>
-    <button id="send" type="submit">Send</button>
-  </form>
+    <section class="panel chat-panel" aria-label="Chat with Uncle">
+      <div class="panel-head">
+        <div class="uncle-face" aria-hidden="true">U</div>
+        <h2>Uncle</h2>
+        <span class="online">Online</span>
+      </div>
+      <div id="chat" aria-live="polite"></div>
+      <div id="suggestions" class="suggestions"></div>
+      <form id="form">
+        <input id="input" placeholder="Uncle, where to eat?" autocomplete="off" maxlength="1000" autofocus>
+        <button id="send" type="submit" aria-label="Send">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </button>
+      </form>
+    </section>
+  </main>
 
   <script>
-    const chat = document.getElementById("chat");
-    const form = document.getElementById("form");
-    const input = document.getElementById("input");
-    const send = document.getElementById("send");
+    const $ = (id) => document.getElementById(id);
+    const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const wait = (ms) =>
+      new Promise((resolve) => setTimeout(resolve, reduceMotion ? 0 : ms));
+
+    function el(tag, className, text) {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined) node.textContent = text;
+      return node;
+    }
+
+    // Links from Google open in a new tab. The server only sends https ones.
+    function link(href, text, className) {
+      const a = el("a", className, text);
+      a.href = href;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      return a;
+    }
+
+    // ---- Chat ---------------------------------------------------------------
+
+    const chat = $("chat");
+    const form = $("form");
+    const input = $("input");
+    const send = $("send");
 
     // Conversation so far, in the shape the /chat endpoint expects.
     // The server only reads the most recent messages, so only send those.
@@ -57,30 +241,74 @@
       crypto.randomUUID?.() ?? Math.random().toString(36).slice(2);
     // The server gives up on a turn well before this.
     const REPLY_TIMEOUT_MS = 90_000;
+    const SUGGESTIONS = [
+      "Chicken rice nearby?",
+      "Will it rain later?",
+      "When is the next 13 bus?",
+      "Something cheap and fast",
+    ];
+    let waiting = false;
+
+    function scrollChat() {
+      chat.scrollTo({
+        top: chat.scrollHeight,
+        behavior: reduceMotion ? "auto" : "smooth",
+      });
+    }
 
     function addBubble(role, text) {
-      const div = document.createElement("div");
-      div.className = `bubble ${role === "user" ? "you" : "uncle"}`;
-      div.textContent = text;
-      chat.appendChild(div);
-      chat.scrollTop = chat.scrollHeight;
-      return div;
+      const bubble = el("div", `bubble ${role === "user" ? "you" : "uncle"}`, text);
+      chat.append(bubble);
+      scrollChat();
+      return bubble;
     }
 
-    function showError(bubble, text) {
-      bubble.textContent = text;
-      bubble.classList.add("error");
+    function addTyping() {
+      const bubble = el("div", "bubble uncle typing");
+      bubble.setAttribute("aria-label", "Uncle is typing");
+      bubble.append(el("span"), el("span"), el("span"));
+      chat.append(bubble);
+      scrollChat();
+      return bubble;
     }
 
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const message = input.value.trim();
-      if (!message) return;
+    // Swap the typing dots for Uncle's answer: fade the dots out, then fade
+    // the words in one after another, as if Uncle were saying them.
+    async function settle(bubble, text, isError) {
+      bubble.classList.add("fade-out");
+      await wait(180);
+      bubble.className = `bubble uncle fade-in${isError ? " error" : ""}`;
+      bubble.removeAttribute("aria-label");
+      bubble.replaceChildren();
+      if (isError) {
+        bubble.textContent = text;
+      } else {
+        const parts = text.split(/(\s+)/);
+        const step = Math.min(35, 900 / parts.length);
+        parts.forEach((part, i) => {
+          if (part.trim() === "") {
+            bubble.append(part);
+            return;
+          }
+          const word = el("span", "word", part);
+          word.style.animationDelay = `${Math.round(i * step)}ms`;
+          bubble.append(word);
+        });
+      }
+      scrollChat();
+    }
 
-      input.value = "";
-      send.disabled = true;
+    function setWaiting(on) {
+      waiting = on;
+      send.disabled = on;
+      for (const chip of $("suggestions").children) chip.disabled = on;
+    }
+
+    async function ask(message) {
+      if (!message || waiting) return;
+      setWaiting(true);
       addBubble("user", message);
-      const thinking = addBubble("assistant", "Uncle thinking...");
+      const bubble = addTyping();
 
       try {
         const res = await fetch("/chat", {
@@ -89,6 +317,10 @@
           body: JSON.stringify({
             session,
             history: history.slice(-MAX_HISTORY_MESSAGES),
+            // Cards the page already has, so Uncle can name them again.
+            known: [...cardCache.values()]
+              .slice(-10)
+              .map(({ id, name }) => ({ id, name })),
             message,
           }),
           signal: AbortSignal.timeout?.(REPLY_TIMEOUT_MS),
@@ -98,26 +330,475 @@
           // Show what went wrong, but keep it out of history, so Uncle never
           // reads his own error messages back as things he said.
           const error = data.error ?? "Uncle cannot answer now. Try again.";
-          showError(thinking, error);
+          await settle(bubble, error, true);
           return;
         }
-        thinking.textContent = data.reply;
+        await settle(bubble, data.reply, false);
         history.push({ role: "user", content: message });
         history.push({ role: "assistant", content: data.reply });
+        // Put the places Uncle recommends on the cards and the map.
+        if (Array.isArray(data.places) && data.places.length > 0) {
+          showPicks(data.places).catch((err) => console.error(err));
+        }
       } catch (err) {
-        showError(
-          thinking,
+        await settle(
+          bubble,
           err.name === "TimeoutError"
             ? "Uncle took too long. Try again."
             : "Cannot reach Uncle. Try again.",
+          true,
         );
       } finally {
-        send.disabled = false;
+        setWaiting(false);
         input.focus();
       }
+    }
+
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const message = input.value.trim();
+      if (!message || waiting) return;
+      input.value = "";
+      ask(message);
     });
 
+    for (const text of SUGGESTIONS) {
+      const chip = el("button", "suggestion", text);
+      chip.type = "button";
+      chip.addEventListener("click", () => ask(text));
+      $("suggestions").append(chip);
+    }
+
     addBubble("assistant", "Eh, what you want to eat? Don't waste my time.");
+
+    // ---- Map and nearby places ------------------------------------------------
+
+    // With a browser key, the map is Google's interactive map, with a pin for
+    // each place and a dot for you. Without one, or if Google rejects the key,
+    // it falls back to Google's basic map, which needs no key but shows one
+    // thing at a time: where you are, then whichever place you pick.
+    const CT_HUB_2 = { latitude: 1.3115, longitude: 103.8615 };
+    const placesEl = $("places");
+    const mapNote = $("map-note");
+    const locateButton = $("locate");
+    const toLatLng = ({ latitude, longitude }) => ({ lat: latitude, lng: longitude });
+    let map = null;
+    let basicMap = null;
+    let markerLib = null;
+    let markers = [];
+    let pins = [];
+    let shown = [];
+    // Where the search is centred, as {latitude, longitude, source}: you, or
+    // CT Hub 2 if you did not share your location.
+    let centre = null;
+    // The index of the picked card, or -1 for none.
+    let picked = -1;
+    // Every place card shown so far, by place id, newest last.
+    const cardCache = new Map();
+    function remember(places) {
+      for (const place of places) {
+        if (place.known) continue;
+        cardCache.delete(place.id);
+        cardCache.set(place.id, place);
+      }
+    }
+    // What the panel lists: "nearby", or "picks" from the chat. The nearby
+    // list is kept, so going back to it needs no new search.
+    let listing = "nearby";
+    let nearby = [];
+    let nearbyNote = "";
+
+    // Google calls this if it rejects the browser key.
+    window.gm_authFailure = () => {
+      console.warn("Google Maps rejected the browser key, so using the basic map.");
+      useBasicMap();
+    };
+
+    // Load the Maps JavaScript API once, with the public browser key.
+    function loadMapsScript(key) {
+      return new Promise((resolve, reject) => {
+        window.lunchUncleMapsReady = resolve;
+        const script = document.createElement("script");
+        script.src =
+          `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}` +
+          "&v=weekly&loading=async&callback=lunchUncleMapsReady";
+        script.async = true;
+        script.onerror = () => reject(new Error("Google Maps could not load"));
+        document.head.append(script);
+      });
+    }
+
+    async function startMap() {
+      const config = await fetch("/config")
+        .then((res) => res.json())
+        .catch(() => ({}));
+      if (!config.mapsKey) {
+        console.info("No GOOGLE_MAPS_BROWSER_KEY, so using the basic map.");
+        useBasicMap();
+        return;
+      }
+      try {
+        await loadMapsScript(config.mapsKey);
+        const { Map } = await google.maps.importLibrary("maps");
+        markerLib = await google.maps.importLibrary("marker");
+        // Google may have rejected the key while the libraries loaded.
+        if (basicMap) return;
+        map = new Map($("map-canvas"), {
+          center: toLatLng(CT_HUB_2),
+          zoom: 16,
+          mapId: config.mapId,
+          colorScheme: "DARK",
+          disableDefaultUI: true,
+          zoomControl: true,
+          clickableIcons: false,
+        });
+        mapNote.classList.add("hidden");
+      } catch {
+        useBasicMap();
+      }
+    }
+
+    // Switch to Google's basic embedded map. It needs no key, but it can only
+    // show one search at a time, with Google's own pin and place card.
+    function useBasicMap() {
+      if (basicMap) return;
+      // Google draws its own error inside the interactive map's box, so hide
+      // that box rather than reuse it.
+      map = null;
+      markers = [];
+      pins = [];
+      $("map-canvas").hidden = true;
+      basicMap = $("basic-map");
+      basicMap.hidden = false;
+      basicMap.addEventListener("load", () => {
+        basicMap.classList.remove("switching");
+        mapNote.classList.add("hidden");
+      });
+      if (shown[picked]) {
+        showOnBasicMap(placeQuery(shown[picked]), 17);
+      } else if (centre) {
+        showOnBasicMap(centreQuery(), 16);
+      }
+    }
+
+    // Point the basic map at a search, fading it out until the new view loads.
+    function showOnBasicMap(query, zoom) {
+      const params = new URLSearchParams({ q: query, z: zoom, output: "embed" });
+      const src = `https://www.google.com/maps?${params}`;
+      if (basicMap.dataset.src === src) return;
+      basicMap.dataset.src = src;
+      basicMap.classList.add("switching");
+      basicMap.src = src;
+    }
+
+    function centreQuery() {
+      if (centre.source !== "you") return "CT Hub 2, 114 Lavender Street, Singapore";
+      return `${centre.latitude.toFixed(6)},${centre.longitude.toFixed(6)}`;
+    }
+
+    // A name and address finds the place itself, with its Google Maps card.
+    function placeQuery({ name, address, location }) {
+      return address
+        ? `${name}, ${address}`
+        : `${location.latitude},${location.longitude}`;
+    }
+
+    // The browser's location, or null if the user says no or does not answer.
+    function locate() {
+      return new Promise((resolve) => {
+        if (!navigator.geolocation) return resolve(null);
+        // The browser's own timeout does not count time spent on the prompt.
+        setTimeout(() => resolve(null), 15_000);
+        navigator.geolocation.getCurrentPosition(
+          ({ coords }) => resolve({ lat: coords.latitude, lng: coords.longitude }),
+          () => resolve(null),
+          { enableHighAccuracy: true, timeout: 10_000, maximumAge: 60_000 },
+        );
+      });
+    }
+
+    function showSkeletons() {
+      const skeletons = [0, 1, 2].map((i) => {
+        const card = el("li", "card skeleton");
+        card.style.setProperty("--i", i);
+        card.setAttribute("aria-hidden", "true");
+        return card;
+      });
+      placesEl.replaceChildren(...skeletons);
+    }
+
+    function credit(photo) {
+      const line = el("figcaption", "credit", "Photo: ");
+      line.append(photo.author_url ? link(photo.author_url, photo.author) : photo.author);
+      return line;
+    }
+
+    function reviewBlock(review) {
+      const block = el("blockquote", "review");
+      const who = el("div", "who");
+      if (review.author_photo) {
+        const avatar = el("img", "avatar");
+        avatar.alt = "";
+        avatar.referrerPolicy = "no-referrer";
+        avatar.src = review.author_photo;
+        who.append(avatar);
+      }
+      who.append(
+        review.author_url
+          ? link(review.author_url, review.author)
+          : el("span", "", review.author),
+      );
+      if (review.rating) {
+        const stars = Math.max(0, Math.min(5, Math.round(review.rating)));
+        who.append(el("span", "stars", "★".repeat(stars) + "☆".repeat(5 - stars)));
+      }
+      if (review.when) who.append(el("span", "", review.when));
+      block.append(who, el("p", "", review.text));
+      if (review.translated) {
+        block.append(el("span", "translated", "Translated by Google"));
+      }
+      // Long reviews are cut to three lines; a click shows the rest.
+      block.addEventListener("click", (event) => {
+        if (!event.target.closest("a")) block.classList.toggle("open");
+      });
+      return block;
+    }
+
+    function placeCard(place, i) {
+      const card = el("li", "card");
+      card.style.setProperty("--i", i);
+      card.addEventListener("click", (event) => {
+        if (!event.target.closest("a")) focusPlace(i);
+      });
+
+      if (place.photos.length > 0) {
+        const photos = el("div", "photos");
+        for (const photo of place.photos) {
+          const figure = el("figure");
+          const img = el("img");
+          img.alt = `Photo of ${place.name}`;
+          img.loading = "lazy";
+          img.referrerPolicy = "no-referrer";
+          img.addEventListener("load", () => img.classList.add("loaded"));
+          img.addEventListener("error", () => figure.remove());
+          img.src = photo.url;
+          figure.append(img, credit(photo));
+          photos.append(figure);
+        }
+        card.append(photos);
+      }
+
+      const title = el("h3");
+      title.append(el("span", "badge", String(i + 1)), el("span", "", place.name));
+      card.append(title);
+
+      const facts = el("div", "facts");
+      facts.append(
+        el(
+          "span",
+          "chip",
+          place.rating === null
+            ? "No rating yet"
+            : `★ ${place.rating.toFixed(1)} · ${place.rating_count.toLocaleString()} reviews`,
+        ),
+      );
+      if (place.open_now !== null) {
+        facts.append(
+          el(
+            "span",
+            `chip ${place.open_now ? "open" : "closed"}`,
+            place.open_now ? "Open now" : "Closed now",
+          ),
+        );
+      }
+      facts.append(el("span", "chip", `${place.distance_m} m`));
+      card.append(facts);
+
+      if (place.address) card.append(el("p", "address", place.address));
+      for (const review of place.reviews) card.append(reviewBlock(review));
+      if (place.maps_url) {
+        card.append(link(place.maps_url, "Open in Google Maps ↗", "maps-link"));
+      }
+      return card;
+    }
+
+    function renderCards(places) {
+      if (places.length === 0) {
+        placesEl.replaceChildren(el("li", "card empty", "No places to eat found nearby."));
+        return;
+      }
+      placesEl.replaceChildren(...places.map(placeCard));
+    }
+
+    function drawMarkers(origin, places) {
+      if (!map) return;
+      for (const marker of markers) marker.map = null;
+      const { AdvancedMarkerElement } = markerLib;
+      const here = toLatLng(origin);
+      markers = [
+        new AdvancedMarkerElement({
+          map,
+          position: here,
+          content: el("div", "you-dot"),
+          title: origin.source === "you" ? "You are here" : "CT Hub 2",
+        }),
+      ];
+      pins = places.map((place, i) => {
+        const pin = el("div", "pin", String(i + 1));
+        const marker = new AdvancedMarkerElement({
+          map,
+          position: toLatLng(place.location),
+          content: pin,
+          title: place.name,
+          gmpClickable: true,
+        });
+        marker.addEventListener("gmp-click", () => focusPlace(i));
+        markers.push(marker);
+        return pin;
+      });
+
+      if (places.length === 0) {
+        map.setCenter(here);
+        return;
+      }
+      const bounds = new google.maps.LatLngBounds(here);
+      for (const place of places) bounds.extend(toLatLng(place.location));
+      map.fitBounds(bounds, 70);
+    }
+
+    // Show one place on both the map and the list.
+    function focusPlace(i) {
+      const place = shown[i];
+      if (!place) return;
+      pick(i);
+      placesEl.children[i]?.scrollIntoView({
+        behavior: reduceMotion ? "auto" : "smooth",
+        block: "nearest",
+      });
+      if (basicMap) showOnBasicMap(placeQuery(place), 17);
+      else if (map) map.panTo(toLatLng(place.location));
+    }
+
+    // Show where you are (or CT Hub 2), with no place picked.
+    function showCentre() {
+      if (!centre) return;
+      pick(-1);
+      if (basicMap) showOnBasicMap(centreQuery(), 16);
+      else if (map) map.panTo(toLatLng(centre));
+    }
+
+    function pick(i) {
+      picked = i;
+      placesEl.querySelectorAll(".card").forEach((card, j) => {
+        card.classList.toggle("active", i === j);
+      });
+      pins.forEach((pin, j) => pin.classList.toggle("active", i === j));
+    }
+
+    const mapReady = startMap();
+
+    function setListing(kind, note) {
+      listing = kind;
+      $("places-title").textContent = kind === "picks" ? "Uncle's picks" : "Nearby";
+      $("refresh").textContent = kind === "picks" ? "Nearby" : "Refresh";
+      $("location-note").textContent = note;
+    }
+
+    // Fade the current cards out, swap in new ones, and let them rise in.
+    async function swapCards(update) {
+      placesEl.classList.add("leaving");
+      await wait(200);
+      update();
+      placesEl.classList.remove("leaving");
+    }
+
+    // Show the places Uncle just recommended, on the cards and the map.
+    async function showPicks(picks) {
+      // New cards are remembered; "known" picks use the card the page has.
+      remember(picks);
+      const places = picks
+        .map((pick) => (pick.known ? cardCache.get(pick.id) : pick))
+        .filter(Boolean);
+      if (places.length === 0) return;
+      await swapCards(() => {
+        shown = places;
+        picked = -1;
+        setListing("picks", "From the chat · near CT Hub 2");
+        renderCards(places);
+      });
+      await mapReady;
+      if (basicMap) {
+        // The basic map shows one place, so show Uncle's first pick.
+        focusPlace(0);
+      } else {
+        drawMarkers(centre ?? { ...CT_HUB_2, source: "ct_hub_2" }, places);
+      }
+    }
+
+    // Go back from Uncle's picks to the places nearest you.
+    async function backToNearby() {
+      if (nearby.length === 0) return showNearby();
+      await swapCards(() => {
+        shown = nearby;
+        picked = -1;
+        setListing("nearby", nearbyNote);
+        renderCards(nearby);
+      });
+      await mapReady;
+      if (basicMap) showCentre();
+      else drawMarkers(centre, nearby);
+    }
+
+    async function showNearby() {
+      const refresh = $("refresh");
+      refresh.disabled = true;
+      locateButton.hidden = true;
+      setListing("nearby", "Locating you…");
+      picked = -1;
+      showSkeletons();
+
+      const position = await locate();
+      centre = position
+        ? { latitude: position.lat, longitude: position.lng, source: "you" }
+        : { ...CT_HUB_2, source: "ct_hub_2" };
+      nearbyNote = position ? "Closest to you" : "Location off · near CT Hub 2";
+      const label = position ? "Show my location" : "Show CT Hub 2";
+      locateButton.title = label;
+      locateButton.setAttribute("aria-label", label);
+      locateButton.hidden = false;
+      // If Uncle's picks came in while we were locating you, leave them up.
+      if (listing === "nearby") {
+        $("location-note").textContent = nearbyNote;
+        // Show where you are while the places load.
+        mapReady.then(showCentre);
+      }
+
+      try {
+        const query = position ? `?lat=${position.lat}&lng=${position.lng}` : "";
+        const res = await fetch(`/places${query}`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error ?? "Cannot find places right now.");
+        nearby = data.places;
+        remember(nearby);
+        if (listing !== "nearby") return;
+        shown = nearby;
+        renderCards(shown);
+        await mapReady;
+        drawMarkers(centre, shown);
+      } catch (err) {
+        if (listing === "nearby") {
+          placesEl.replaceChildren(el("li", "card empty", err.message));
+        }
+      } finally {
+        refresh.disabled = false;
+      }
+    }
+
+    locateButton.addEventListener("click", showCentre);
+    $("refresh").addEventListener("click", () =>
+      listing === "picks" ? backToNearby() : showNearby(),
+    );
+    showNearby();
   </script>
 </body>
 </html>
